@@ -215,7 +215,11 @@ included. Stop the BBS first (or copy the files from a clean shutdown).
   systems.
 - **Btrieve features of a live file.** The reader handles v5 and v6 files with records (the
   v6 ones through the page allocation table and the active FCR copy, tested on Worldgroup's
-  own `GALTELA.DAT` and `WGSMENU2.DAT`, `tests/btrieve_fixtures.rs`). These are refused, naming
+  own `GALTELA.DAT` and `WGSMENU2.DAT`, `tests/btrieve_fixtures.rs`). A large v6 file can hold
+  an all-zero page where a page allocation table belongs, with the table on the next two
+  pages and the file's stored page numbers not counting that page: a realm's 151 MB
+  `WCCMP002.DAT` and 183 MB `WCCUPDA2.DAT` both have it at physical page 30722. The reader finds
+  such pages when it opens the file (`btrieve/pat.rs`). These are refused, naming
   the file, before anything is written:
 
   | Found | Error |

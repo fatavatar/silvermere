@@ -286,12 +286,19 @@ impl BtrieveFile {
         let page_length = u64::from(self.header.page_length);
         let default_acs = match self.header.version {
             Version::V6 => {
+                if let Some(pat) = &mut self.pat {
+                    pat.find_blank_slots(&mut self.reader, &self.header)?;
+                }
                 // loadPAT: every 'A' page in the first PAT pair; the last one wins.
                 let mut pair = vec![0u8; 2 * usize::from(self.header.page_length)];
                 self.reader.read_at(2 * page_length, &mut pair)?;
                 let mut acs = None;
                 for page in pat::scan_first_pat(&pair, usize::from(self.header.page_length))? {
-                    acs = self.acs_at_physical(u64::from(page) * page_length)?;
+                    let page = self
+                        .pat
+                        .as_ref()
+                        .map_or(u64::from(page), |pat| pat.physical(u64::from(page)));
+                    acs = self.acs_at_physical(page * page_length)?;
                 }
                 acs
             }
