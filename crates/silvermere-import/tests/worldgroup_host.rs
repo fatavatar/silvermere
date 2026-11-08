@@ -91,7 +91,7 @@ fn host_realm(name: &str) -> std::path::PathBuf {
         "WGSUSR2.DAT",
         30,
         &[
-            account("Mira", "dragon", "USER"),
+            account("Mira", "Dragonfly", "USER"),
             account("Sysop", "letmein1", "SYSOP"),
             account("Moe", "moe", "USER"),
             account("Test", "", "DEMO"),
@@ -205,20 +205,26 @@ async fn a_worldgroup_realm_brings_its_accounts_profiles_and_evil_points() {
 
     // NORMAL, which class USER holds, is the sysop and game-operator key; the codec at 78
     // gives a sysop DEBUG; class SYSOP holds every key
+    // the stored password is hashed in the form the host compared (any case, 9 characters)
+    // and marked, so the login compares the first 9 characters typed in any case
+    let bbs = AccountFlags::BBS_PASSWORD.bits();
     let (r, flags, hash) = roles(db, "Mira").await;
     assert_eq!(r, ["DEBUG", "gameop", "player", "sysop"]);
-    assert_eq!(flags, 0);
-    assert!(verify("dragon", &hash));
-    assert!(!verify("Dragon", &hash));
+    assert_eq!(flags, bbs);
+    assert!(verify("dragonfly", &hash));
+    assert!(verify(
+        &silvermere_auth::password::bbs_form("DRAGONFLYING"),
+        &hash
+    ));
     let (r, flags, hash) = roles(db, "Sysop").await;
     assert_eq!(r, ["DEBUG", "gameop", "player", "sysop"]);
-    assert_eq!(flags, 0, "the master flag takes nothing away");
+    assert_eq!(flags, bbs, "the master flag takes nothing away");
     assert!(verify("letmein1", &hash));
     let (_, flags, _) = roles(db, "Moe").await;
-    assert_eq!(flags, AccountFlags::NO_GOSSIP.bits());
+    assert_eq!(flags, AccountFlags::NO_GOSSIP.bits() | bbs);
     let (r, flags, hash) = roles(db, "Test").await;
     assert_eq!(r, ["player"]);
-    assert_eq!(flags, AccountFlags::NO_LOAN.bits());
+    assert_eq!(flags, AccountFlags::NO_LOAN.bits(), "no password, no mark");
     assert!(hash.is_empty());
 
     // Mira's character is under the account she logged in with
@@ -274,7 +280,7 @@ async fn a_worldgroup_realm_brings_its_accounts_profiles_and_evil_points() {
     };
     Importer::new(opts, Some(db)).run().await.unwrap();
     let (_, _, hash) = roles(db, "Mira").await;
-    assert!(verify("dragon", &hash));
+    assert!(verify("dragonfly", &hash));
 }
 
 // A dry run reads and counts the host files, and a DOS set or a copy of the module's files

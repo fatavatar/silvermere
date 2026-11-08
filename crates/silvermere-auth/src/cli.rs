@@ -158,6 +158,8 @@ async fn store_password<S: AccountStore>(
     cost: Cost,
 ) -> Result<(), AuthError> {
     account.password_hash = password::hash_with(password, cost);
+    // a password set here is silvermere's own, compared whole
+    account.flags.remove(AccountFlags::BBS_PASSWORD);
     store.update(account).await?;
     audit(
         store,

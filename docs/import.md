@@ -372,7 +372,7 @@ files alone has none, and nothing changes:
 
 | File | What is read | Written to |
 |---|---|---|
-| `WGSUSR2.DAT` | each account's user-id, password (the host stored it as typed) and class | `accounts`: the password hashed (argon2id), the roles and flags below |
+| `WGSUSR2.DAT` | each account's user-id, password (the host stored at most 9 characters) and class | `accounts`: the password hashed (argon2id) in the form the host compared, marked `BBS_PASSWORD` ([auth.md](auth.md#accounts)), the roles and flags below |
 | `WGSKEY2.DAT` | the keys of each user-id and of each class (`&USER`, ...) | the roles and flags below |
 | `WCCMMUD.MSG` | `SYSOPKEY`, `GAMOPKEY`, `GOSSKEY`, `AUCTKEY`, `LOANKEY` | the roles and flags below |
 | `WCCMMUD.INI` | `CODEC_OF_TWINKS`, `SYS_DISBAND_KEY` | `DEBUG`, `SYS_DISBAND_KEY` |

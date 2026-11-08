@@ -1600,7 +1600,8 @@ async fn write_bank_books(
 
 /// The host's accounts (a live Worldgroup realm, [`crate::host`]), before the characters, so
 /// each character goes under the account its player logged in with. An account is written
-/// from its record (password hashed, roles and flags from the keys it held) when this import
+/// from its record (the password hashed in the host's compared form and marked
+/// `BBS_PASSWORD`, roles and flags from the keys it held) when this import
 /// creates it, when it has no password yet (an earlier import's), or with `--reset-state`;
 /// otherwise it is kept and reported. A user-id the accounts cannot take is reported.
 async fn write_host_accounts(
@@ -1640,8 +1641,10 @@ async fn write_host_accounts(
             ));
             continue;
         }
-        let password_hash = if silvermere_auth::account::validate_password(&a.password).is_ok() {
-            silvermere_auth::password::hash(&a.password)
+        // compared as the host compared it: the first 9 characters typed, any case
+        let bbs = silvermere_auth::password::bbs_form(&a.password);
+        let password_hash = if silvermere_auth::account::validate_password(&bbs).is_ok() {
+            silvermere_auth::password::hash(&bbs)
         } else {
             notes.push(note(
                 d,
@@ -1649,7 +1652,10 @@ async fn write_host_accounts(
             ));
             String::new()
         };
-        let grants = host.grants(a);
+        let mut grants = host.grants(a);
+        if !password_hash.is_empty() {
+            grants.flags |= silvermere_auth::AccountFlags::BBS_PASSWORD.bits();
+        }
         match existing {
             Some(row) => {
                 let account = Account {
