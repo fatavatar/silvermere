@@ -252,9 +252,12 @@ pub fn display_debug_room_stats(world: &mut World, id: SessionId, room: u32, map
     }
 }
 
+/// `MAXDISPLAY`: the restock nodes one listing looks at, listed or not.
+pub const MAXDISPLAY: usize = 2000;
+
 /// The heading and one line per pending restock of the shop (every shop for 0): slot, due
-/// date and time, and the slot's item when one shop is listed; at most 2000 nodes looked
-/// at, then `Total I2R`. The due tick is shown as wall time (now plus the ticks still to
+/// date and time, and the slot's item when one shop is listed; at most
+/// [`crate::dll_edits::maxdisplay`] nodes looked at, then `Total I2R`. The due tick is shown as wall time (now plus the ticks still to
 /// go).
 pub fn display_all_restocking_required(world: &mut World, id: SessionId, shop: i64) {
     push(world, id, Msg::SysopRestockHeading { shop });
@@ -267,7 +270,7 @@ pub fn display_all_restocking_required(world: &mut World, id: SessionId, shop: i
     // MAXDISPLAY counts every node looked at, listed or not
     let nodes: Vec<_> = crate::shops::pending_restocks(world, None)
         .into_iter()
-        .take(2000)
+        .take(crate::dll_edits::maxdisplay(world))
         .filter(|n| filter.is_none_or(|s| n.shop == s))
         .collect();
     let found = nodes.len();
@@ -571,7 +574,14 @@ pub fn display_scan_of_users(world: &mut World, id: SessionId, mode: u8) {
             ),
             evil: left(&p.evil.to_string(), 6),
             combat,
-            edited: left(if p.immortal != 0 { "EDITED" } else { " " }, 6),
+            edited: left(
+                if p.immortal != 0 {
+                    crate::dll_edits::edited_tag(world)
+                } else {
+                    " "
+                },
+                6,
+            ),
         };
         push(world, id, msg);
         // mode 2: the evil timers. TODO(T-038): the evil timers.

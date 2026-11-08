@@ -773,7 +773,13 @@ pub fn cmd_give(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandLine)
         plr.status.remove(PlayerStatus::SNEAKING);
         plr.hidden = 0;
     }
-    let amt = leading_int32(line.arg(1)) as i16 as i32;
+    // an int: 16 bits on DOS
+    let amt = leading_int32(line.arg(1));
+    let amt = if crate::worldgroup::on(world) {
+        amt
+    } else {
+        i32::from(amt as i16)
+    };
     if amt > 0 {
         give_coins(world, id, room, amt, line)
     } else {
@@ -1130,5 +1136,9 @@ pub fn display_user_money(world: &mut World, id: SessionId) -> Handled {
 /// The weight test the GIVE coin path and `encumbrance` share, for tests.
 pub fn encumbrance_of(world: &World, plr: &Character) -> (i64, i32, i16) {
     let max = max_weight(world, plr);
-    (load(plr), max, encumbrance_pct(plr.wgt, plr.coins, max))
+    (
+        load(world, plr),
+        max,
+        encumbrance_pct(plr.wgt, plr.coins, max),
+    )
 }

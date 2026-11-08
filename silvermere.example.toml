@@ -65,6 +65,8 @@ max_hup_hp = 0   # 0..=100; MAXHUPHP
 max_hup_items = 0   # 0..=100; MAXHUPIT
 keep_exp = false
 light_evy = true
+published_dll_edits = false
+worldgroup_module = false
 gender_gold = 0   # -1..=32000; GENDERGO
 enable_lawful = true
 ep_cycle = 60   # 15..=360; EPCYCLE

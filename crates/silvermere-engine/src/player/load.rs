@@ -191,7 +191,9 @@ pub fn load_player(
     if !world.classes.contains_key(&c.class) {
         c.class = DEFAULT_CLASS;
     }
-    super::save::strip_level_gated(&mut c);
+    if !crate::dll_edits::keeps_level_gated_abilities(world) {
+        super::save::strip_level_gated(&mut c);
+    }
     reduce_level_to_exp(world, &mut c);
     // nobody is in a group or moving on entry (the group is session state).
     if let Some(s) = world.sessions.get_mut(&id) {
@@ -340,8 +342,8 @@ pub fn load_player(
         }
         c.totalcp = total;
     }
-    // (`maxmana` unsigned: the comparison is unsigned).
-    if c.mana as u16 > c.maxmana {
+    // (`maxmana` unsigned: the comparison is unsigned on DOS).
+    if crate::player::secondary::mana_above_max(world, &c) {
         c.mana = c.maxmana as i16;
     }
     if c.hp > c.maxhp {
@@ -393,7 +395,7 @@ pub fn load_player(
             s.ust.statline = text;
         }
     }
-    if c.race != SEE_HIDDEN_RACE {
+    if c.race != SEE_HIDDEN_RACE && !crate::dll_edits::keeps_see_hidden(world) {
         for slot in &mut c.abils {
             if slot.0 == Ability::SeeHidden {
                 *slot = (Ability::None, 0);

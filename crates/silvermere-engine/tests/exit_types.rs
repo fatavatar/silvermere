@@ -520,6 +520,24 @@ fn toll_exit() {
     insta::assert_snapshot!("toll_refusal", r.snapshot());
 }
 
+// A toll past 32767 crowns: DOS prints the low word, signed; the Worldgroup module the whole
+#[test]
+fn a_big_toll_prints_whole_on_the_worldgroup_module() {
+    for (wide, want) in [(false, "-15536"), (true, "50000")] {
+        let mut w = world();
+        w.config.worldgroup_module = wide;
+        let id = player(&mut w, "Aldric", hub(ExitType::Toll));
+        set_exit(&mut w, hub(ExitType::Toll), 0, |e| e.par1 = 50_000);
+        assert!(!walk(&mut w, id, 0));
+        assert_eq!(
+            lines(&take(&mut w, id)),
+            [format!(
+                "You do not have enough to cover the toll of {want} gold crowns."
+            )]
+        );
+    }
+}
+
 // EXIT_ACTION
 #[test]
 fn action_exit() {

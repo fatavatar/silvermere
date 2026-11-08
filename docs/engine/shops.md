@@ -78,7 +78,7 @@ shelf (`userid` = `items::limited::SHELF_MARK`), so a copy dropped on the shop's
 
 ## Restocking
 
-- At start-up, shops 0-199 (`shops::NRESTOCK`) are initiated: a slot with no
+- At start-up, shops 0-199 (`shops::NRESTOCK`; 0-32766 under `game.published_dll_edits`) are initiated: a slot with no
   interval (`regentime` 0) is topped up once (by `regennum` when a 1-99 roll, `genrdn(1, 100)`, is below
   `regenpct`, never past `maxqty`) or cut back to `maxqty`; a timed slot is cut back to
   `maxqty` and queued, its first restock due `genrdn(1, max(2, regentime))` minutes away: 1 to `regentime` − 1, or exactly 1

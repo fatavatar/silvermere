@@ -168,6 +168,17 @@ fn scale(points: i16, by: i16) -> i16 {
     points.wrapping_mul(factor)
 }
 
+/// [`scale`] with the Worldgroup module's 32-bit `int`.
+fn scale32(points: i32, by: i32) -> i32 {
+    let limit = i32::from(SCALE_LIMIT);
+    let factor = if (-limit..=limit).contains(&points.wrapping_mul(by)) {
+        by
+    } else {
+        limit
+    };
+    points.wrapping_mul(factor)
+}
+
 /// The cost of one evil act, the decision half of `add_evil_points` after the caller has
 /// settled the timer question (`should_give_evil`): `points` is the base cost, `victim` the
 /// player hurt or `None` (a monster, no scaling, no timer).
@@ -176,7 +187,16 @@ fn scale(points: i16, by: i16) -> i16 {
 /// charged. Otherwise the refusals in their order (warnings, over 300, lawful), then the
 /// victim scaling (lawful x3 or 10 for a free act, Saint x3, Good x2), the fall to
 /// [`EVIL_MIN_AFTER`] and the add below [`EVIL_POINTS_MAX`] that never lowers the points.
-pub fn cost(points: i16, attacker: Attacker, victim: Option<Victim>) -> Result<Charge, Refusal> {
+///
+/// `wide`: the Worldgroup module's 32-bit `int` (`game.worldgroup_module`). The scaling, the
+/// fall and the never-lower test are worked in 32 bits there, and only the sum is cut back to
+/// the 16-bit field.
+pub fn cost(
+    points: i16,
+    attacker: Attacker,
+    victim: Option<Victim>,
+    wide: bool,
+) -> Result<Charge, Refusal> {
     if let Some(v) = victim
         && v.evil >= EVIL_VICTIM_LIMIT
     {
@@ -194,6 +214,9 @@ pub fn cost(points: i16, attacker: Attacker, victim: Option<Victim>) -> Result<C
     }
     if attacker.lawful {
         return Err(Refusal::Lawful);
+    }
+    if wide {
+        return Ok(cost32(points, attacker.evil, victim));
     }
     let mut points = points;
     if let Some(v) = victim {
@@ -224,6 +247,39 @@ pub fn cost(points: i16, attacker: Attacker, victim: Option<Victim>) -> Result<C
         timer_points: points,
         charged: true,
     })
+}
+
+/// The charge of [`cost`] past its refusals, worked as the Worldgroup module does.
+fn cost32(points: i16, evil: i16, victim: Option<Victim>) -> Charge {
+    let mut points = i32::from(points);
+    if let Some(v) = victim {
+        if v.lawful {
+            points = if points == 0 {
+                i32::from(LAWFUL_POINTS)
+            } else {
+                scale32(points, 3)
+            };
+        } else if v.evil < -200 {
+            points = scale32(points, 3);
+        } else if v.evil < -50 {
+            points = scale32(points, 2);
+        }
+    }
+    let have = i32::from(evil);
+    if have < 0 && have.wrapping_add(points) < i32::from(EVIL_MIN_AFTER) {
+        points = i32::from(EVIL_MIN_AFTER) - have;
+    }
+    let sum = have.wrapping_add(points);
+    let after = if evil < EVIL_POINTS_MAX && sum > have {
+        sum as i16
+    } else {
+        evil
+    };
+    Charge {
+        evil: after,
+        timer_points: points as i16,
+        charged: true,
+    }
 }
 
 /// The points `save_evil_points` keeps for the account's next character: none with
@@ -286,22 +342,22 @@ mod tests {
             lawful: true,
             warnings: true,
         };
-        assert_eq!(cost(10, all, None), Err(Refusal::Warnings));
+        assert_eq!(cost(10, all, None, false), Err(Refusal::Warnings));
         let no_warn = Attacker {
             warnings: false,
             ..all
         };
-        assert_eq!(cost(10, no_warn, None), Err(Refusal::TooEvil));
+        assert_eq!(cost(10, no_warn, None, false), Err(Refusal::TooEvil));
         let lawful = Attacker { evil: 0, ..no_warn };
-        assert_eq!(cost(10, lawful, None), Err(Refusal::Lawful));
+        assert_eq!(cost(10, lawful, None, false), Err(Refusal::Lawful));
         // 300 is still allowed (`> EVIL_ATTACKER_MAX`)
-        assert_eq!(cost(10, atk(300), None).map(|c| c.evil), Ok(310));
+        assert_eq!(cost(10, atk(300), None, false).map(|c| c.evil), Ok(310));
         // the same refusals with a victim who is not evil
         let v = Some(Victim {
             evil: 29,
             lawful: false,
         });
-        assert_eq!(cost(10, all, v), Err(Refusal::Warnings));
+        assert_eq!(cost(10, all, v, false), Err(Refusal::Warnings));
     }
 
     #[test]
@@ -316,7 +372,7 @@ mod tests {
             lawful: false,
         });
         assert_eq!(
-            cost(10, all, v),
+            cost(10, all, v, false),
             Ok(Charge {
                 evil: 301,
                 timer_points: 0,
@@ -329,30 +385,55 @@ mod tests {
     fn victim_scaling() {
         let v = |evil, lawful| Some(Victim { evil, lawful });
         // a plain victim: the base points
-        assert_eq!(cost(10, atk(0), v(0, false)).unwrap().timer_points, 10);
+        assert_eq!(
+            cost(10, atk(0), v(0, false), false).unwrap().timer_points,
+            10
+        );
         // Good x2, Saint x3, lawful x3 (lawful wins over Saint)
-        assert_eq!(cost(10, atk(0), v(-51, false)).unwrap().timer_points, 20);
-        assert_eq!(cost(10, atk(0), v(-201, false)).unwrap().timer_points, 30);
-        assert_eq!(cost(10, atk(0), v(-201, true)).unwrap().timer_points, 30);
-        assert_eq!(cost(1, atk(0), v(0, true)).unwrap().timer_points, 3);
+        assert_eq!(
+            cost(10, atk(0), v(-51, false), false).unwrap().timer_points,
+            20
+        );
+        assert_eq!(
+            cost(10, atk(0), v(-201, false), false)
+                .unwrap()
+                .timer_points,
+            30
+        );
+        assert_eq!(
+            cost(10, atk(0), v(-201, true), false).unwrap().timer_points,
+            30
+        );
+        assert_eq!(cost(1, atk(0), v(0, true), false).unwrap().timer_points, 3);
         // a free act against a lawful victim costs 10
-        assert_eq!(cost(0, atk(0), v(0, true)).unwrap().timer_points, 10);
+        assert_eq!(cost(0, atk(0), v(0, true), false).unwrap().timer_points, 10);
         // (sic) the overflow guard multiplies by 32000
         assert_eq!(scale(11000, 3), 11000i16.wrapping_mul(32000));
         // no victim: no scaling
-        assert_eq!(cost(10, atk(0), None).unwrap().evil, 10);
+        assert_eq!(cost(10, atk(0), None, false).unwrap().evil, 10);
+        // the Worldgroup module: the same for small points; 22000 x3 is 66000, which DOS
+        // wraps to 464 inside the guard, while the 32-bit guard trips and the product of
+        // 22000 x32000 keeps its low word, 12288
+        assert_eq!(
+            cost(10, atk(0), v(-201, false), true).unwrap().timer_points,
+            30
+        );
+        assert_eq!(cost(0, atk(0), v(0, true), true).unwrap().timer_points, 10);
+        let dos = cost(22000, atk(0), v(-201, false), false).unwrap();
+        let wide = cost(22000, atk(0), v(-201, false), true).unwrap();
+        assert_eq!((dos.evil, wide.evil), (464, 12288));
     }
 
     #[test]
     fn good_characters_fall_to_ten_and_the_cap_holds() {
         // a good character lands on 10
-        let c = cost(10, atk(-100), None).unwrap();
+        let c = cost(10, atk(-100), None, false).unwrap();
         assert_eq!((c.evil, c.timer_points), (10, 110));
         // already at 0: plain add
-        assert_eq!(cost(1, atk(0), None).unwrap().evil, 1);
+        assert_eq!(cost(1, atk(0), None, false).unwrap().evil, 1);
         // not raised from 30000, never lowered by an overflow
-        assert_eq!(cost(10, atk(30000), None), Err(Refusal::TooEvil));
-        let c = cost(10, atk(299), None).unwrap();
+        assert_eq!(cost(10, atk(30000), None, false), Err(Refusal::TooEvil));
+        let c = cost(10, atk(299), None, false).unwrap();
         assert_eq!(c.evil, 309);
         assert!(c.charged);
     }

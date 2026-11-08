@@ -40,7 +40,7 @@ use super::apply::{
 };
 use super::effect::{EffectSlot, SpellEffect, SpellEffects, Stat, TeleportPart};
 use super::resist::{
-    apply_element_resistance, may_resist, mr_damage, resist_chance, room_mr_damage,
+    apply_element_resistance, may_resist, player_mr_damage, resist_chance, room_mr_damage,
 };
 use super::{
     AmountRange, CharacterSlots, SlotOutcome, TargetKind, TargetKindExt, add_spell_to_monster,
@@ -411,7 +411,7 @@ pub fn apply_monster_cast(
             if !single {
                 return Outcome::NoEffect;
             }
-            let dmg = mr_damage(value, i32::from(user.character.mr), user.anti_magic, 0);
+            let dmg = player_mr_damage(value, user.character.mr, user.anti_magic, 0, user.wide);
             let after = hp - dmg;
             user.character.hp = after as i16;
             Outcome::Applied {
@@ -874,8 +874,13 @@ pub fn apply_monster_cast_area(
                     .iter_mut()
                     .map(|user| {
                         let amount = resisted(user);
-                        let dmg =
-                            mr_damage(amount, i32::from(user.character.mr), user.anti_magic, 0);
+                        let dmg = player_mr_damage(
+                            amount,
+                            user.character.mr,
+                            user.anti_magic,
+                            0,
+                            user.wide,
+                        );
                         damage_user(user, dmg, dmg)
                     })
                     .collect();

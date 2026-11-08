@@ -228,9 +228,14 @@ pub fn rob_user(world: &mut World, id: SessionId, target: SessionId, what: Optio
         let have = player_mut(world, target)
             .and_then(|t| purse(t, cur).map(|(p, _)| *p))
             .unwrap_or(0);
-        // the roll takes the low word, a negative one counting as 0
-        let low = have as u16 as i16;
-        let amount = world.rng.range(0, i32::from(low.max(0))) as u32;
+        // the roll takes the purse as an int (the low word on DOS), a negative one counting
+        // as 0
+        let top = if crate::worldgroup::on(world) {
+            have as i32
+        } else {
+            i32::from(have as u16 as i16)
+        };
+        let amount = world.rng.range(0, top.max(0)) as u32;
         if amount == 0 {
             fail(world);
             return;

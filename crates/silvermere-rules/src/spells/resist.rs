@@ -174,6 +174,24 @@ pub fn mr_damage(amount: i32, mr: i32, anti_magic: bool, carried_cut: i32) -> i3
     }
 }
 
+/// "Inflict Damage on Armour" on a player: [`mr_damage`] on DOS. With `wide`, the Worldgroup
+/// module (`game.worldgroup_module`), the resistance is the unsigned field tested as a 32-bit
+/// `int`, so a player is treated as a monster is ([`monster_mr_damage`]): below 50 no cut and
+/// extra damage, and no cut carried between the targets of an area.
+pub fn player_mr_damage(
+    amount: i32,
+    mr: u16,
+    anti_magic: bool,
+    carried_cut: i32,
+    wide: bool,
+) -> i32 {
+    if wide {
+        monster_mr_damage(amount, i32::from(mr), anti_magic)
+    } else {
+        mr_damage(amount, i32::from(mr), anti_magic, carried_cut)
+    }
+}
+
 /// The percentage a monster's magic resistance takes off "Inflict Damage on Armour": the
 /// same rule as [`mr_cut_pct`] but signed 16-bit, so a monster below 50 gets no cut and
 /// takes extra damage instead. The cut is cleared for every target.

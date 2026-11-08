@@ -134,6 +134,7 @@ fn with_targets<R>(
     ) -> R,
 ) -> Option<(Vec<SessionId>, Vec<i32>, R)> {
     let mut marked = Marked::take(world, mon, room, spl, only);
+    let wide = crate::worldgroup::on(world);
     let deathhp = world
         .config
         .death_hp
@@ -166,6 +167,7 @@ fn with_targets<R>(
                         arena_safe: false,
                         spells: &spells_f,
                         items: &items_f,
+                        wide,
                     })
                     .collect();
                 let mut caster = MonsterCaster { monster, known };

@@ -185,10 +185,11 @@ pub fn strip_level_gated(c: &mut Character) {
 
 /// Saves the session's character. Nothing is written for an empty session, a character
 /// not yet created, or one whose name is
-/// not validated (`PS_VALIDATED`); otherwise the level-gated abilities are stripped and
-/// the record goes to the persistence channel.
+/// not validated (`PS_VALIDATED`); otherwise the level-gated abilities are stripped (unless
+/// [`crate::dll_edits`] keeps them) and the record goes to the persistence channel.
 /// Returns whether a request was queued.
 pub fn save_player(world: &mut World, id: SessionId) -> bool {
+    let keep_gated = crate::dll_edits::keeps_level_gated_abilities(world);
     let Some(s) = world.sessions.get_mut(&id) else {
         return false;
     };
@@ -208,7 +209,9 @@ pub fn save_player(world: &mut World, id: SessionId) -> bool {
     if c.userid.is_empty() || !c.settings.contains(PlayerSettings::VALIDATED) {
         return false;
     }
-    strip_level_gated(c);
+    if !keep_gated {
+        strip_level_gated(c);
+    }
     if let Some(d) = dragging {
         c.dragging = d;
     }

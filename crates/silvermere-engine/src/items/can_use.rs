@@ -49,6 +49,8 @@ pub struct UseCheck<'a> {
     pub anti_magic: bool,
     /// The spell records, for a scroll's Link to Spell.
     pub spells: &'a dyn Fn(SpellNo) -> Option<&'a Spell>,
+    /// The Worldgroup module (`game.worldgroup_module`): the level abilities compare signed.
+    pub wide: bool,
 }
 
 /// May `plr` use `item`? `Err` names the first refusal, in the original's order.
@@ -100,14 +102,22 @@ pub fn can_use(plr: &Character, item: &Item, check: &UseCheck<'_>) -> Result<(),
     if check.anti_magic && has(Ability::Magical) {
         return Err(CantUse::AntiMagic);
     }
-    // The level abilities, slot by slot, compared as unsigned 16-bit numbers: a negative
-    // minimum refuses everyone (sic).
+    // The level abilities, slot by slot, compared as unsigned 16-bit numbers on DOS: a
+    // negative minimum refuses everyone (sic). The Worldgroup module compares them signed.
+    let level = i32::from(plr.level);
+    let value_of = |value: i16| {
+        if check.wide {
+            i32::from(value)
+        } else {
+            i32::from(value as u16)
+        }
+    };
     for &(ability, value) in &item.abilities {
         match ability {
-            Ability::MinLevel if plr.level < value as u16 => {
+            Ability::MinLevel if level < value_of(value) => {
                 return Err(CantUse::MinLevel);
             }
-            Ability::MaxLevel if plr.level > value as u16 => {
+            Ability::MaxLevel if level > value_of(value) => {
                 return Err(CantUse::MaxLevel);
             }
             _ => {}

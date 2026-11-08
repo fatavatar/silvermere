@@ -39,6 +39,7 @@ pub fn user_can_use(world: &World, plr: &Character, item: &Item) -> bool {
         class: world.classes.get(&plr.class),
         anti_magic: has_ability(world, plr, Ability::AntiMagic),
         spells: &spells,
+        wide: crate::worldgroup::on(world),
     };
     can_use(plr, item, &check).is_ok()
 }
@@ -569,8 +570,13 @@ pub fn ready_weapon(
         let Some(plr) = world.sessions.get(&id).and_then(|s| s.player()) else {
             return false;
         };
-        // Too weak for it (compared unsigned: a negative requirement is always too heavy)
-        let heavy = itm.strreq as u16 > plr.str;
+        // Too weak for it (compared unsigned on DOS: a negative requirement is always too
+        // heavy; signed on the Worldgroup module)
+        let heavy = if crate::worldgroup::on(world) {
+            i32::from(itm.strreq) > i32::from(plr.str)
+        } else {
+            itm.strreq as u16 > plr.str
+        };
         // Quick with it
         let quick = world
             .classes

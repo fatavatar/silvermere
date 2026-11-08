@@ -24,6 +24,15 @@ fn class_name(world: &World, n: ClassNo) -> String {
 }
 
 /// The entry's gang, or `None` when it has none.
+/// The entry's `EDITED` mark as this game words it ([`crate::dll_edits::edited_tag`]).
+fn mark(world: &World, e: &TopEntry) -> &'static str {
+    if e.edited.is_empty() {
+        ""
+    } else {
+        crate::dll_edits::edited_tag(world)
+    }
+}
+
 fn gang_or_none(e: &TopEntry) -> &str {
     if e.gang.is_empty() { "None" } else { &e.gang }
 }
@@ -49,7 +58,7 @@ pub fn display_only_topten(world: &mut World, id: SessionId) {
             name: left(&format!("{} {}", e.name, e.lastname), 21),
             class: left(&class_name(world, e.classnum), 10),
             gang: left(gang_or_none(e), 19),
-            edited: left(&e.edited, 6),
+            edited: left(mark(world, e), 6),
         });
     }
     push_all(world, id, msgs);
@@ -115,7 +124,7 @@ pub fn display_next_topten(world: &mut World, id: SessionId) {
                 class,
                 gang,
                 exp: left(&big_exp(e.exphi, e.explo), 12),
-                edited: left(&e.edited, 6),
+                edited: left(mark(world, e), 6),
             }
         } else {
             Msg::ToptenRow {

@@ -308,6 +308,7 @@ fn apply_slot(
     let anti_magic = user_has(world, p, Ability::AntiMagic);
     let poison_immune = user_has(world, p, Ability::PoisonImmune);
     let element_resist_pct = user_element_resist(world, p, cast.spell);
+    let wide = crate::worldgroup::on(world);
     let deathhp = world
         .config
         .death_hp
@@ -333,6 +334,7 @@ fn apply_slot(
         arena_safe: false,
         spells: &spells_f,
         items: &items_f,
+        wide,
     };
     let mut caster = MonsterCaster {
         monster: &mut caster_rec,

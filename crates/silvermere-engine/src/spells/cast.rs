@@ -514,6 +514,7 @@ fn apply_to_user(
     let arena_safe = plr(world, cast_id)
         .and_then(|c| world.room(room_of(c)))
         .is_some_and(|rm| arena_safe_room(world, rm));
+    let wide = crate::worldgroup::on(world);
     let deathhp = world
         .config
         .death_hp
@@ -547,6 +548,7 @@ fn apply_to_user(
         arena_safe,
         spells: &spells_f,
         items: &items_f,
+        wide,
     });
     apply_effect(slot, &cast, &mut target, state, rng)
 }

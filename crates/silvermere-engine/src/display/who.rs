@@ -95,7 +95,11 @@ fn reputation(world: &World, plr: &Character) -> &'static str {
 /// for a channel without one; a session in the game here always has its character).
 fn row(world: &World, plr: &Character, technical: bool, namelen: usize) -> Msg {
     let name = format!("{} {}", plr.firstname, plr.lastname);
-    let edited = if plr.immortal != 0 { "EDITED" } else { " " };
+    let edited = if plr.immortal != 0 {
+        crate::dll_edits::edited_tag(world)
+    } else {
+        " "
+    };
     let level = legal_level(plr.evil);
     if technical {
         return Msg::WhoTechRow {

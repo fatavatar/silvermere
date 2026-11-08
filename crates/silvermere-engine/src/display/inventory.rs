@@ -80,7 +80,11 @@ pub fn carried_words(world: &World, plr: &Character) -> Option<String> {
         words.push(format!(
             "{} ({})",
             itm.name,
-            if two { "Two handed" } else { "Weapon Hand" }
+            if two {
+                crate::dll_edits::two_handed_label(world)
+            } else {
+                "Weapon Hand"
+            }
         ));
         take(&mut tally, plr.weapon);
     }
@@ -160,9 +164,14 @@ pub fn display_inventory_items(world: &mut World, shown: SessionId, to: SessionI
         copper: to_copper(plr.coins),
         name: copper_name(),
     });
-    // The items' weight plus the coins' (16-bit) over the maximum weight printed as an
-    // `int`
+    // The items' weight plus the coins' over the maximum weight printed as an `int`: both
+    // cut to 16 bits on DOS
     let max = max_weight(world, plr);
+    let max = if crate::worldgroup::on(world) {
+        i64::from(max)
+    } else {
+        i64::from(max as i16)
+    };
     let level = EncumbranceLevel::from_pct(pct);
     let colour = match level {
         EncumbranceLevel::Heavy => ansi::ANSI_FGRED,
@@ -171,8 +180,8 @@ pub fn display_inventory_items(world: &mut World, shown: SessionId, to: SessionI
         EncumbranceLevel::None => ansi::ANSI_FGGREY,
     };
     msgs.push(Msg::InvEncumbrance {
-        cur: load(plr).to_string(),
-        max: (max as i16).to_string(),
+        cur: load(world, plr).to_string(),
+        max: max.to_string(),
         colour: ansi_str(colour).to_owned(),
         level: level.name().to_owned(),
         pct: i32::from(pct),

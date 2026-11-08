@@ -178,7 +178,7 @@ fn unknown_options() {
     let mut h = Harness::new();
     let id = h.player("Ann");
     assert_eq!(
-        parse(&CommandLine::parse("set xyzzy"), h.plr(id)),
+        parse(&CommandLine::parse("set xyzzy"), h.plr(id), false),
         Err(SetError::NotOption)
     );
     let out = h.line(id, "set xyzzy");
@@ -195,7 +195,7 @@ fn unknown_options() {
 fn abbreviations_follow_the_original_order() {
     let mut h = Harness::new();
     let id = h.player("Ann");
-    let p = |l: &str, h: &Harness| parse(&CommandLine::parse(l), h.plr(id));
+    let p = |l: &str, h: &Harness| parse(&CommandLine::parse(l), h.plr(id), false);
     assert_eq!(p("set s", &h), Ok(Change::Suicide));
     assert_eq!(p("SET M", &h), Ok(Change::MaxpagesSyntax));
     assert_eq!(p("set m 9", &h), Ok(Change::Maxpages(9)));

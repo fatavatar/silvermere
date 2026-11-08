@@ -21,7 +21,9 @@ use silvermere_types::records::{ActiveMonster, Character, Item, KnownMonster, Sp
 use silvermere_types::sizes::NSPELLCAST;
 
 use super::effect::{EffectSlot, SpellEffect, SpellEffects, Stat, TeleportPart};
-use super::resist::{apply_element_resistance, monster_mr_damage, mr_damage, room_mr_damage};
+use super::resist::{
+    apply_element_resistance, monster_mr_damage, player_mr_damage, room_mr_damage,
+};
 use super::{
     CasterLevel, CharacterSlots, SlotOutcome, TargetKind, TargetKindExt, add_spell_damage_bonus,
     add_spell_to_character, add_spell_to_monster, duration, scale_spell_amount,
@@ -173,6 +175,9 @@ pub struct UserTarget<'a, 'w> {
     pub spells: &'a dyn Fn(SpellNo) -> Option<&'w Spell>,
     /// Item records by number, for the worn items and the weapon.
     pub items: &'a dyn Fn(ItemNo) -> Option<&'w Item>,
+    /// The Worldgroup module (`game.worldgroup_module`): magic resistance is tested as a
+    /// 32-bit `int` ([`super::resist::player_mr_damage`]).
+    pub wide: bool,
 }
 
 /// A monster as a spell target.
@@ -535,7 +540,8 @@ fn apply_to_user(
             P::OnSelf | P::Single => {
                 // no duration test anywhere.
                 let scaled = add_spell_damage_bonus(amount, cast.spelldamage_pct());
-                let dmg = mr_damage(scaled, i32::from(user.character.mr), user.anti_magic, 0);
+                let dmg =
+                    player_mr_damage(scaled, user.character.mr, user.anti_magic, 0, user.wide);
                 damage_user(user, dmg, dmg)
             }
             P::Area { .. } => {
@@ -543,11 +549,12 @@ fn apply_to_user(
                 // with the undivided share (sic); the share feeds the monster loop.
                 let scaled = share(user.element_resist_pct);
                 state.area_armour_amount = Some(scaled);
-                let dmg = mr_damage(
+                let dmg = player_mr_damage(
                     scaled,
-                    i32::from(user.character.mr),
+                    user.character.mr,
                     user.anti_magic,
                     state.area_armour_carry,
+                    user.wide,
                 );
                 state.area_armour_carry = dmg;
                 damage_user(user, dmg, amount)

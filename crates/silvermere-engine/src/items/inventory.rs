@@ -346,9 +346,14 @@ pub fn update_encumbrance(world: &mut World, id: SessionId) -> i16 {
     pct
 }
 
-/// The load the inventory shows: carried weight plus coin weight.
-pub fn load(plr: &Character) -> i64 {
-    i64::from(plr.wgt) + i64::from(coin_weight(plr.coins) as u16)
+/// The load the inventory shows: carried weight plus coin weight (cut to 16 bits on DOS).
+pub fn load(world: &World, plr: &Character) -> i64 {
+    let coins = if crate::worldgroup::on(world) {
+        i64::from(coin_weight(plr.coins) as u32)
+    } else {
+        i64::from(coin_weight(plr.coins) as u16)
+    };
+    i64::from(plr.wgt) + coins
 }
 
 /// Puts a copy of `item` with `charges` uses (-2: a new copy, the item's own `charges`)

@@ -511,8 +511,12 @@ fn toll(world: &mut World, c: &GateCtx) -> Gate {
             seen: true,
         };
     }
-    // `exitpar1s` read as a signed int: the low word
-    let n = i64::from(gold as u16 as i16);
+    // `exitpar1s` read as a signed int: the low word on DOS
+    let n = if crate::worldgroup::on(world) {
+        i64::from(gold as i32)
+    } else {
+        i64::from(gold as u16 as i16)
+    };
     let cur = currency_name(world, i64::from(gold), Currency::Gold);
     refuse(world, c.id, Msg::TollShort { n, cur })
 }

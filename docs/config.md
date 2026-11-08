@@ -175,6 +175,8 @@ Defaults are the values the original distribution shipped. `inactive_secs = 3600
 | `game.max_hup_items` | `SILVERMERE_GAME__MAX_HUP_ITEMS` | `0` | Most items lost on hangup. 0..=100. | `MAXHUPIT` |
 | `game.keep_exp` | `SILVERMERE_GAME__KEEP_EXP` | `false` | Keep some experience after the final death. | `KEEPEXP` |
 | `game.light_evy` | `SILVERMERE_GAME__LIGHT_EVY` | `true` | SYSOP LIGHTNING may hit any player. | `LIGHTEVY` |
+| `game.published_dll_edits` | `SILVERMERE_GAME__PUBLISHED_DLL_EDITS` | `false` | Behave as the original with the published `WCCMMUD.DLL` edit set: level-gated abilities and See Hidden are kept, every shop restocks, and the edited text. Off is stock 1.11p. | — |
+| `game.worldgroup_module` | `SILVERMERE_GAME__WORLDGROUP_MODULE` | `false` | Compute as the 32-bit Worldgroup module (`1.11p-WG3NT`) where it differs from DOS: no 16-bit cuts of prices, amounts typed, encumbrance, maximum hit points and the like. For a realm that ran on Worldgroup. Off is the DOS module. | — |
 | `game.gender_gold` | `SILVERMERE_GAME__GENDER_GOLD` | `0` | Gold to change gender. -1..=32000. | `GENDERGO` |
 | `game.enable_lawful` | `SILVERMERE_GAME__ENABLE_LAWFUL` | `true` | Players may choose the Lawful alignment. | `ENABLAWF` |
 | `game.ep_cycle` | `SILVERMERE_GAME__EP_CYCLE` | `60` | Minutes per evil-point forgiveness cycle. 15..=360. | `EPCYCLE` |

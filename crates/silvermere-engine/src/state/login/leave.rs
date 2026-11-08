@@ -280,16 +280,26 @@ pub fn hangup(world: &mut World, id: SessionId) {
         plr.room = huproom;
     }
     let who = plr.firstname.clone();
+    let notice = disconnect_notice(world, who);
     tell_game(
         world,
         Some(id),
         PlayerFlags::NOENTRYMSG,
         true,
         None,
-        &Msg::PlayerDisconnected { who },
+        &notice,
     );
     crate::combat::check_kill_user(world, id);
     save_player(world, id);
+}
+
+/// The game's notice of a player who dropped: [`crate::dll_edits`] words it at `0x7C02F`.
+fn disconnect_notice(world: &World, who: String) -> Msg {
+    if world.config.published_dll_edits {
+        Msg::PlayerHungUp { who }
+    } else {
+        Msg::PlayerDisconnected { who }
+    }
 }
 
 /// Drops up to `max` items into the room: every second inventory slot (sic), then every

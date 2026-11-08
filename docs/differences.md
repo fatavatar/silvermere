@@ -111,6 +111,36 @@ Stated here so they are not read as differences from a stock install.
   format string, so a `%` in the file was read as a format. silvermere sends the
   line literally; no stock map file has a `%` ([info code](../crates/silvermere-engine/src/commands/info.rs)).
 
+## The published DLL edits
+
+`game.published_dll_edits` (off by default) behaves as the original does with the published
+`WCCMMUD.DLL` edit set applied, for a world with more classes, races and shops than stock. It
+departs from 1.11p on purpose, so nothing else here assumes it. It keeps Smash, Perfect Stealth,
+Meditate and See Hidden on any class, race and level; initiates shops up to number 32766 and
+removes the practical limits on the restock queue and its display; and shows `(Weapon Hand)` for
+two-handed weapons, `just hung up!!!`, `SYSOP` for `EDITED` and `SYSOP WAREZ` for `SYSOP LANCE`.
+The list, with each edit's offset and the edits with nothing to port, is in
+`crates/silvermere-engine/src/dll_edits.rs`.
+
+## The Worldgroup module
+
+`game.worldgroup_module` (off by default) computes as the 32-bit Worldgroup module
+(`1.11p-WG3NT`) does where it differs from the DOS module silvermere follows otherwise. The two
+are built from the same source, but DOS has a 16-bit `int`, so numbers DOS cuts to 16 bits
+before it divides, compares or prints them are whole on Worldgroup, and an unsigned 16-bit field
+compares signed there. The records keep their 16-bit fields on both, so results stored back
+come out the same. With it on: the inventory's load and maximum weight, shop prices with their
+markup and shop quantities print whole; the hospital charges the whole healing fee; a toll exit
+names the whole toll; ROB rolls out of the victim's whole purse; amounts typed to GIVE,
+BANKBOOK, MARKUP and SET MAX... and random-event line numbers are not wrapped; `(health-50)*level`
+in the maximum hit points is not wrapped; the maximum mana is never floored at 0 and mana is
+compared with it signed; an item's minimum and maximum level and its strength requirement
+compare signed; the evil-point victim scaling is worked in 32 bits; and a player's magic
+resistance below 50 gives no cut but extra damage, as a monster's does, with no cut carried
+between the targets of an area spell. A realm that ran on Worldgroup should turn it on. The
+list, with each place's address in the module, is in
+`crates/silvermere-engine/src/worldgroup.rs`.
+
 ## Kept exact
 
 These match the original and are checked against it.

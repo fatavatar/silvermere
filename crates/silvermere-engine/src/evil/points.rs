@@ -103,7 +103,7 @@ fn settle(
     attacker: Attacker,
     victim: Option<Victim>,
 ) -> Option<Charge> {
-    match evil::cost(points, attacker, victim) {
+    match evil::cost(points, attacker, victim, crate::worldgroup::on(world)) {
         Err(r) => {
             let msg = match r {
                 Refusal::Warnings => Msg::EvilWarning,

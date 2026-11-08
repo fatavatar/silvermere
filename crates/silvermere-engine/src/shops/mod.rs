@@ -295,13 +295,13 @@ pub fn restock_untimed_slot(s: &mut ShopSlot, rng: &mut dyn Rng) -> Untimed {
     Untimed::Unchanged
 }
 
-/// The untimed slots of every shop in `0..NRESTOCK` that is not a gang shop, as start-up
+/// The untimed slots of every shop in `0..`[`crate::dll_edits::nrestock`] that is not a gang shop, as start-up
 /// gives them ([`restock_untimed_slot`], same rolls in the same order); timed slots are not
 /// touched and nothing is queued. A changed shop's stock is persisted. Returns the number
 /// of slots topped up.
 pub fn restock_untimed_all(world: &mut World, rng: &mut dyn Rng) -> u32 {
     let mut topped = 0;
-    for k in 0..NRESTOCK {
+    for k in 0..crate::dll_edits::nrestock(world) {
         let shop = ShopNo(k);
         let Some(shp) = world.shops.get_mut(&shop) else {
             continue;
@@ -374,9 +374,9 @@ pub fn check_initiate_restocking(world: &mut World, shop: ShopNo, rng: &mut dyn 
     }
 }
 
-/// [`check_initiate_restocking`] for every shop in `0..NRESTOCK`.
+/// [`check_initiate_restocking`] for every shop in `0..`[`crate::dll_edits::nrestock`].
 pub fn initiate_all(world: &mut World, rng: &mut dyn Rng) {
-    for k in 0..NRESTOCK {
+    for k in 0..crate::dll_edits::nrestock(world) {
         check_initiate_restocking(world, ShopNo(k), rng);
     }
 }
@@ -390,7 +390,7 @@ pub fn restock_items(world: &mut World, rng: &mut dyn Rng) {
     let now = world.scheduler.tick();
     let n = world.restock.len();
     let mut changed: Vec<ShopNo> = Vec::new();
-    for k in (n.saturating_sub(MAXRESTOCK)..n).rev() {
+    for k in (n.saturating_sub(crate::dll_edits::maxrestock(world))..n).rev() {
         let node = world.restock[k];
         if node.due > now {
             continue;

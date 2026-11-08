@@ -630,6 +630,25 @@ fn give_an_item_with_receive_on_and_off() {
     assert_eq!(count(plr(&w, bob), DAGGER), 1);
 }
 
+// 40000 coins: a negative 16-bit amount on DOS (taken for an item name), whole on the
+// Worldgroup module
+#[test]
+fn the_worldgroup_module_gives_big_amounts() {
+    for (wide, given) in [(false, 0), (true, 40_000)] {
+        let mut w = world();
+        w.config.worldgroup_module = wide;
+        let id = player(&mut w, "Aldric");
+        let bob = player(&mut w, "Bob");
+        edit(&mut w, id, |c| c.coins.copper = 50_000);
+        edit(&mut w, bob, |c| c.maxwgt = 30_000);
+        cmd(&mut w, id, "give 40000 copper to bob");
+        assert_eq!(
+            (plr(&w, id).coins.copper, plr(&w, bob).coins.copper),
+            (50_000 - given, given)
+        );
+    }
+}
+
 // coins, receive off, not that much
 #[test]
 fn give_coins() {
@@ -979,6 +998,7 @@ fn check<'a>(class: &'a Class, anti_magic: bool) -> UseCheck<'a> {
         class: Some(class),
         anti_magic,
         spells: &|_| None,
+        wide: false,
     }
 }
 
@@ -1030,6 +1050,17 @@ fn can_use_matrix() {
         can_use(&c, &sword, &check(&all, false)),
         Err(CantUse::MaxLevel)
     );
+    // a negative minimum: unsigned on DOS, refusing everyone; signed on the Worldgroup module
+    sword.abilities[0] = (Ability::MinLevel, -1);
+    assert_eq!(
+        can_use(&c, &sword, &check(&all, false)),
+        Err(CantUse::MinLevel)
+    );
+    let wide = UseCheck {
+        wide: true,
+        ..check(&all, false)
+    };
+    assert_eq!(can_use(&c, &sword, &wide), Ok(()));
     sword.abilities[0] = (Ability::None, 0);
     // Anti Magic (the Witchunter) refuses Magical items
     let mut bow = sword.clone();

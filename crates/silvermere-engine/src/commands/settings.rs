@@ -251,19 +251,25 @@ pub fn leading_int16(text: &str) -> i16 {
 }
 
 /// The stored limit for `SET MAX... {n}`: `leading_int`, cut to `MAXLIMIT`, then stored in an
-/// `unsigned char` (a negative number wraps: `-5` is 251).
-pub fn limit(text: &str) -> u8 {
-    let val = leading_int16(text).min(MAXLIMIT);
-    val as u8
+/// `unsigned char` (a negative number wraps: `-5` is 251). `wide`: the Worldgroup module's
+/// 32-bit `int`, where DOS's 16-bit one wraps (`70000` is 4464).
+pub fn limit(text: &str, wide: bool) -> u8 {
+    if wide {
+        let val = crate::commands::inventory::leading_int32(text).min(i32::from(MAXLIMIT));
+        val as u8
+    } else {
+        let val = leading_int16(text).min(MAXLIMIT);
+        val as u8
+    }
 }
 
 /// The option parsing of SET: the change `line` asks of `plr` (whose current settings the toggles
 /// read).
-pub fn parse(line: &CommandLine, plr: &Character) -> Result<Change, SetError> {
+pub fn parse(line: &CommandLine, plr: &Character, wide: bool) -> Result<Change, SetError> {
     match line.argc() {
         0 | 1 => Ok(Change::Options),
         2 => one_word(line.arg(1), plr),
-        3 => two_words(line.arg(1), line.arg(2)),
+        3 => two_words(line.arg(1), line.arg(2), wide),
         _ => statline_custom(line),
     }
 }
@@ -309,15 +315,15 @@ fn pick(value: &str, words: &[&str], changes: &[Change], invalid: Msg) -> Result
 }
 
 /// `SET {option} {value}`, then the new `UTF8`.
-fn two_words(option: &str, value: &str) -> Result<Change, SetError> {
+fn two_words(option: &str, value: &str, wide: bool) -> Result<Change, SetError> {
     use Change as C;
     let Some(two) = lookup(&TWO_WORD, option) else {
         return Err(SetError::Ignored);
     };
     match two {
-        Two::Maxpages => Ok(C::Maxpages(limit(value))),
-        Two::Maxgossip => Ok(C::Maxgossip(limit(value))),
-        Two::Maxauction => Ok(C::Maxauction(limit(value))),
+        Two::Maxpages => Ok(C::Maxpages(limit(value, wide))),
+        Two::Maxgossip => Ok(C::Maxgossip(limit(value, wide))),
+        Two::Maxauction => Ok(C::Maxauction(limit(value, wide))),
         // the value is read after the price is checked: see `gender`
         Two::Gender => Ok(match choice(value, &["male", "female"]) {
             Some(0) => C::Gender(b'M'),
@@ -682,10 +688,11 @@ pub fn coins_handed_over(paid: Coins, usr_cur_name: &str) -> String {
 
 /// SET, with every option.
 pub fn cmd_set(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandLine) -> Handled {
+    let wide = crate::worldgroup::on(world);
     let Some(plr) = world.session(id).and_then(|s| s.character.as_ref()) else {
         return Handled::NotCommand;
     };
-    match parse(line, plr) {
+    match parse(line, plr, wide) {
         Ok(change) => apply(world, id, change),
         Err(SetError::NotOption) => Handled::NotCommand,
         Err(SetError::Ignored) => Handled::Done,
@@ -705,14 +712,18 @@ mod tests {
     // leading_int, MAXLIMIT, the unsigned char store
     #[test]
     fn limits() {
-        assert_eq!(limit("5"), 5);
-        assert_eq!(limit("255"), 255);
-        assert_eq!(limit("256"), 255);
-        assert_eq!(limit("abc"), 0);
-        assert_eq!(limit("12abc"), 12);
-        assert_eq!(limit("-5"), 251);
-        assert_eq!(limit("70000"), 255); // 70000 wraps to 4464 in 16 bits
-        assert_eq!(limit("65536"), 0);
+        assert_eq!(limit("5", false), 5);
+        assert_eq!(limit("255", false), 255);
+        assert_eq!(limit("256", false), 255);
+        assert_eq!(limit("abc", false), 0);
+        assert_eq!(limit("12abc", false), 12);
+        assert_eq!(limit("-5", false), 251);
+        // DOS wraps 65546 to 10; the Worldgroup module keeps it and caps it.
+        assert_eq!(limit("65546", false), 10);
+        assert_eq!(limit("65546", true), 255);
+        assert_eq!(limit("-5", true), 251);
+        assert_eq!(limit("70000", false), 255); // 70000 wraps to 4464 in 16 bits
+        assert_eq!(limit("65536", false), 0);
     }
 
     // the coins listed after "You hand over"

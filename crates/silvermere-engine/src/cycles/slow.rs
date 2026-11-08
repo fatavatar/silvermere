@@ -216,7 +216,8 @@ pub fn perform_random_event(world: &mut World, roll: i32) {
                         .and_then(|k| world.text_blocks.get(&(0, k.randtext)));
                     if let Some(block) = block {
                         let rnd = world.rng.range(0, 100);
-                        if let Some(text) = event_line(&block.text, rnd) {
+                        let wide = world.config.worldgroup_module;
+                        if let Some(text) = event_line(&block.text, rnd, wide) {
                             let msg = Msg::RandomEvent { text };
                             tell_room(
                                 world,
@@ -251,13 +252,18 @@ pub fn perform_random_event(world: &mut World, roll: i32) {
 }
 
 /// The line a random-event roll picks: lines are the non-empty `\r`/`\n` separated
-/// tokens; the first of at most 30 whose leading number, cut to 16 bits, is greater than
-/// `rnd` gives the text after its first space. A winning line without a space ends the
-/// search.
-pub fn event_line(text: &str, rnd: i32) -> Option<String> {
+/// tokens; the first of at most 30 whose leading number, cut to 16 bits (`wide`, the
+/// Worldgroup module: 32), is greater than `rnd` gives the text after its first space. A
+/// winning line without a space ends the search.
+pub fn event_line(text: &str, rnd: i32, wide: bool) -> Option<String> {
     let lines = text.split(['\r', '\n']).filter(|l| !l.is_empty());
     for line in lines.take(MAX_EVENT_LINES) {
-        if i32::from(leading_int32(line) as i16) > rnd {
+        let n = if wide {
+            leading_int32(line) as i32
+        } else {
+            i32::from(leading_int32(line) as i16)
+        };
+        if n > rnd {
             return line.find(' ').map(|sp| line[sp + 1..].to_string());
         }
     }
@@ -286,15 +292,26 @@ mod tests {
     #[test]
     fn event_line_takes_the_first_chance_that_beats_the_roll() {
         let block = "10 The orc grunts.\r\n50 The orc scratches itself.\r\n100 The orc yawns.";
-        assert_eq!(event_line(block, 5).as_deref(), Some("The orc grunts."));
         assert_eq!(
-            event_line(block, 10).as_deref(),
+            event_line(block, 5, false).as_deref(),
+            Some("The orc grunts.")
+        );
+        assert_eq!(
+            event_line(block, 10, false).as_deref(),
             Some("The orc scratches itself.")
         );
-        assert_eq!(event_line(block, 99).as_deref(), Some("The orc yawns."));
-        assert_eq!(event_line("50", 10), None);
-        assert_eq!(event_line("5 too low", 10), None);
+        assert_eq!(
+            event_line(block, 99, false).as_deref(),
+            Some("The orc yawns.")
+        );
+        assert_eq!(event_line("50", 10, false), None);
+        assert_eq!(event_line("5 too low", 10, false), None);
         // Only the low 16 bits count: 65546 is 10.
-        assert_eq!(event_line("65546 wraps", 20), None);
+        assert_eq!(event_line("65546 wraps", 20, false), None);
+        // The Worldgroup module keeps the whole number.
+        assert_eq!(
+            event_line("65546 wraps", 20, true).as_deref(),
+            Some("wraps")
+        );
     }
 }

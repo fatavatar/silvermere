@@ -50,6 +50,7 @@ pub fn usable(world: &World, plr: &Character, itm: &Item) -> Usable {
         class,
         anti_magic: has_ability(world, plr, Ability::AntiMagic),
         spells: &spells,
+        wide: crate::worldgroup::on(world),
     };
     if can_use(plr, itm, &check).is_ok() {
         return Usable::Yes;
@@ -83,7 +84,8 @@ fn currency_name(world: &World, currency: u16) -> String {
 
 /// One row (`%-29.29s %-8d %5d %-8s` or `%-29.29s %-8d     Free`, then the ending).
 /// `price` is `None` for Free.
-pub fn shop_row(name: &str, qty: u16, price: Option<(String, String)>, usable: Usable) -> Msg {
+/// `qty` is the quantity as printed (`%-8d`).
+pub fn shop_row(name: &str, qty: i32, price: Option<(String, String)>, usable: Usable) -> Msg {
     let name: String = name.chars().take(29).collect();
     let price = match price {
         Some((amount, cur)) => format!("{amount:>5} {cur:<8}"),
@@ -91,8 +93,7 @@ pub fn shop_row(name: &str, qty: u16, price: Option<(String, String)>, usable: U
     };
     Msg::ShopRow {
         name: format!("{name:<29}"),
-        // `%-8d` of the unsigned quantity: a 16-bit int
-        qty: format!("{:<8}", qty as i16),
+        qty: format!("{qty:<8}"),
         price,
         flag: usable.flag().to_string(),
     }
@@ -114,6 +115,7 @@ pub fn display_shop_items(world: &mut World, id: SessionId, shopnum: ShopNo) {
     let debug = world
         .session(id)
         .is_some_and(|s| s.flags.debug != DebugLevel::Off);
+    let wide = crate::worldgroup::on(world);
     let gang = shop.shop_type == ShopType::GangShop;
     let slots = if gang { GANG_SLOTS } else { NSHOPITEMS };
     let mut shown = false;
@@ -140,7 +142,7 @@ pub fn display_shop_items(world: &mut World, id: SessionId, shopnum: ShopNo) {
             shown = true;
         }
         let price = match price {
-            // the gang's asking price, plus the markup, cut to 16 bits unsigned
+            // the gang's asking price, plus the markup, cut to 16 bits unsigned on DOS
             Some((cost, currency)) => {
                 let code = currency.code();
                 if debug {
@@ -170,19 +172,35 @@ pub fn display_shop_items(world: &mut World, id: SessionId, shopnum: ShopNo) {
                 }
                 (cost != 0).then(|| {
                     let amount = u32::from(cost) * (u32::from(shop.markup) + 100) / 100;
-                    ((amount as u16).to_string(), currency_name(world, code))
+                    let amount = if wide {
+                        amount
+                    } else {
+                        u32::from(amount as u16)
+                    };
+                    (amount.to_string(), currency_name(world, code))
                 })
             }
-            // the item's cost plus the markup, cut to 16 bits signed
+            // the item's cost plus the markup, cut to 16 bits signed on DOS
             None => (itm.cost != 0).then(|| {
                 let amount = u32::from(itm.cost) * (u32::from(shop.markup) + 100) / 100;
+                let amount = if wide {
+                    i64::from(amount)
+                } else {
+                    i64::from(amount as i16)
+                };
                 (
-                    (amount as i16).to_string(),
+                    amount.to_string(),
                     currency_name(world, itm.currency.code()),
                 )
             }),
         };
         let usable = usable(world, &plr, &itm);
+        // `%-8d` of the unsigned quantity: a 16-bit int on DOS
+        let qty = if wide {
+            i32::from(qty)
+        } else {
+            i32::from(qty as i16)
+        };
         tell_user(world, id, shop_row(&itm.name, qty, price, usable));
     }
 }

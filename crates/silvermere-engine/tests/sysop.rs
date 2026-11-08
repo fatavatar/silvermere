@@ -477,6 +477,15 @@ mod sysop {
         assert!(!out.contains("Reg#"));
     }
 
+    #[test]
+    fn the_published_dll_edits_rename_lance_to_warez() {
+        let mut h = Harness::new();
+        h.engine.world.config.published_dll_edits = true;
+        let p = h.who("Pat", Role::Player);
+        assert!(h.line(p, "sysop warez").starts_with("Lcon 8\n"));
+        assert!(!h.line(p, "sysop lance").contains("Lcon"));
+    }
+
     // -------------------------------------------------------------------------------
     // Snapshots
 

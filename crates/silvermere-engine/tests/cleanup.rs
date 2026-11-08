@@ -1723,6 +1723,42 @@ mod untimed_restock {
         assert_eq!(stock_saves_since(&h, mark), [STORE]);
     }
 
+    #[test]
+    fn the_published_dll_edits_initiate_a_shop_past_199() {
+        let mut h = with_shops(vec![shop(
+            HIGH_STORE,
+            ShopType::General,
+            &[slot(0, 5, 30, 1, 100)],
+        )]);
+        let mut rng = SeededRng::new(3);
+        shops::initiate_all(h.w(), &mut rng);
+        assert!(nodes(&mut h, HIGH_STORE).is_empty());
+        h.w().config.published_dll_edits = true;
+        shops::initiate_all(h.w(), &mut rng);
+        assert_eq!(nodes(&mut h, HIGH_STORE).len(), 1);
+    }
+
+    // The oldest entry of a queue longer than MAXRESTOCK waits for ever in stock
+    #[test]
+    fn the_published_dll_edits_reach_past_the_first_1000_queued_restocks() {
+        for (edits, reached) in [(false, false), (true, true)] {
+            let mut h = with_shops(vec![shop(
+                STORE,
+                ShopType::General,
+                &[slot(0, 5, 30, 1, 100)],
+            )]);
+            h.w().config.published_dll_edits = edits;
+            let mut rng = SeededRng::new(3);
+            h.w().restock.clear();
+            shops::check_initiate_restocking(h.w(), STORE, &mut rng);
+            let node = h.w().restock[0];
+            let w = h.w();
+            w.restock = vec![RestockNode { due: 0, ..node }; shops::MAXRESTOCK + 1];
+            shops::restock_items(h.w(), &mut rng);
+            assert_eq!(h.w().restock[0].due != 0, reached, "edits {edits}");
+        }
+    }
+
     // A timed slot keeps its one queued restock and is not cut back
     #[test]
     fn timed_slots_are_not_queued_again_or_cut_back() {

@@ -247,7 +247,7 @@ fn kang_witchunter_sheet() {
         spells: &spells,
         items: &items,
     };
-    let s = secondary(&c, &witchunter(), &kang(), &lookup);
+    let s = secondary(&c, &witchunter(), &kang(), &lookup, false);
     assert_eq!(s.maxwgt, 3792); // 79*48
     assert_eq!(s.maxmr, 41); // (30+135)/4
     assert_eq!(s.mabase, 1); // -2 clamped
@@ -310,7 +310,7 @@ fn caster_sheets() {
         },
     ];
     for r in rows {
-        let s = secondary(&r.c, &r.class, &r.race, &Stub::default());
+        let s = secondary(&r.c, &r.class, &r.race, &Stub::default(), false);
         let got = [
             s.maxwgt,
             s.perception,
@@ -334,12 +334,13 @@ fn bard_and_kai() {
         &caster(9, Magery::Bard, 4),
         &plain_race(0),
         &Stub::default(),
+        false,
     );
     // (3*10+3)*2 = 66; castbase (270+60)/6 = 55; 20+55+15.
     assert_eq!((s.maxmana, s.spellcast), (66, 90));
     let mut kai = caster(15, Magery::Kai, 4);
     kai.magelvl = 1;
-    let s = secondary(&c, &kai, &plain_race(0), &Stub::default());
+    let s = secondary(&c, &kai, &plain_race(0), &Stub::default(), false);
     // maxmana = level-1, castbase 500: 20+500+5.
     assert_eq!((s.maxmana, s.spellcast), (9, 525));
 }
@@ -354,6 +355,7 @@ fn negative_mana_floors_at_zero() {
         &caster(5, Magery::Mage, 3),
         &plain_race(0),
         &Stub::default(),
+        false,
     );
     assert_eq!(s.maxmana, 0);
 }
@@ -371,7 +373,7 @@ fn skills_from_abilities() {
         (Ability::Picklocks, 0),
         (Ability::Tracking, 0),
     ]);
-    let s = secondary(&c, &class, &plain_race(0), &all);
+    let s = secondary(&c, &class, &plain_race(0), &all, false);
     // stealth: 80/4 + (5*2/2+30) + 40/6 + 50/8 + 20 = 87, class only, + Stealth 5.
     assert_eq!((s.stealth, s.stealth_source), (92, StealthSource::Class));
     // skill level past 15: (20-15)/2+15 = 17.
@@ -381,21 +383,24 @@ fn skills_from_abilities() {
     assert_eq!(s.tracking, 107); // (100+40+40+680)/8
 
     let race_only = Stub::with(&[(Ability::RaceStealth, 0)]);
-    let s = secondary(&c, &class, &plain_race(0), &race_only);
+    let s = secondary(&c, &class, &plain_race(0), &race_only, false);
     assert_eq!(
         (s.stealth, s.stealth_source),
         (87 - 15, StealthSource::Race)
     );
     let both = Stub::with(&[(Ability::RaceStealth, 0), (Ability::ClassStealth, 0)]);
-    let s = secondary(&c, &class, &plain_race(0), &both);
+    let s = secondary(&c, &class, &plain_race(0), &both, false);
     assert_eq!(
         (s.stealth, s.stealth_source),
         (87 + 10, StealthSource::Both)
     );
     let hopeless = Stub::with(&[(Ability::RaceStealth, 0), (Ability::Stealth, -500)]);
-    assert_eq!(secondary(&c, &class, &plain_race(0), &hopeless).stealth, 0);
+    assert_eq!(
+        secondary(&c, &class, &plain_race(0), &hopeless, false).stealth,
+        0
+    );
     // Without the abilities, nothing.
-    let none = secondary(&c, &class, &plain_race(0), &Stub::default());
+    let none = secondary(&c, &class, &plain_race(0), &Stub::default(), false);
     assert_eq!(
         [
             none.stealth,
@@ -413,6 +418,7 @@ fn skills_from_abilities() {
         &class,
         &plain_race(0),
         &Stub::with(&[(Ability::Jumpkick, 0)]),
+        false,
     );
     assert_eq!(jk.martial, (plain + 20) * 2);
 }
@@ -426,7 +432,7 @@ fn maxwgt_positive_and_maxhp_grows_with_level() {
             let mut prev = i32::MIN;
             for level in 1..=255u16 {
                 let c = sheet(level, [str_, 50, 50, 50, bashea, 50], 0);
-                let s = secondary(&c, &class, &plain_race(0), &Stub::default());
+                let s = secondary(&c, &class, &plain_race(0), &Stub::default(), false);
                 assert!(s.maxwgt >= 1, "str {str_}");
                 assert!(s.maxhp > prev, "str {str_} hea {bashea} level {level}");
                 prev = s.maxhp;
@@ -1205,5 +1211,76 @@ fn entering_the_realm_runs_load_player_each_time() {
             .unwrap()
             .gossmax,
         1
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// The published DLL edits
+// ---------------------------------------------------------------------------------------
+
+/// Kasimir, loaded at a level below every level gate, holding every stripped ability.
+fn loaded_with_gated_abilities(edits: bool) -> (World, SessionId, Character) {
+    let mut w = world();
+    w.config.published_dll_edits = edits;
+    let id = session(&mut w, 1);
+    let mut c = kasimir(&w, 1);
+    c.level = 10;
+    c.abils[0] = (Ability::Smash, 1);
+    c.abils[1] = (Ability::PerfectStealth, 1);
+    c.abils[2] = (Ability::Meditate, 1);
+    c.abils[3] = (Ability::SeeHidden, 1);
+    load_player(&mut w, id, c, TODAY).unwrap();
+    let c = w.sessions[&id].character.clone().unwrap();
+    (w, id, c)
+}
+
+#[test]
+fn loading_strips_the_gated_abilities_unless_the_edits_keep_them() {
+    let abilities = |c: &Character| [0, 1, 2, 3].map(|i| c.abils[i].0);
+    let (.., stock) = loaded_with_gated_abilities(false);
+    assert_eq!(abilities(&stock), [Ability::None; 4]);
+    let (.., edited) = loaded_with_gated_abilities(true);
+    assert_eq!(
+        abilities(&edited),
+        [
+            Ability::Smash,
+            Ability::PerfectStealth,
+            Ability::Meditate,
+            Ability::SeeHidden
+        ]
+    );
+}
+
+#[test]
+fn saving_strips_the_gated_abilities_unless_the_edits_keep_them() {
+    for (edits, want) in [(false, Ability::None), (true, Ability::Smash)] {
+        let (mut w, id, _) = loaded_with_gated_abilities(edits);
+        let s = w.sessions.get_mut(&id).unwrap();
+        s.created = true;
+        s.character.as_mut().unwrap().abils[0] = (Ability::Smash, 1);
+        assert!(save_player(&mut w, id));
+        let c = w.sessions[&id].character.as_ref().unwrap();
+        assert_eq!(c.abils[0].0, want, "edits {edits}");
+    }
+}
+
+// The Worldgroup module: `(health-50)*level` is worked in 32 bits, and a negative maximum
+// mana is not floored at 0
+#[test]
+fn the_worldgroup_module_works_the_secondary_stats_in_32_bits() {
+    let c = sheet(200, [100, 100, 100, 100, 250, 100], 0);
+    let class = caster(9, Magery::Mage, 4);
+    let dos = secondary(&c, &class, &plain_race(0), &Stub::default(), false);
+    let wide = secondary(&c, &class, &plain_race(0), &Stub::default(), true);
+    // 200*200 = 40000: -25536 in 16 bits, so -1596 against 2500
+    assert_eq!(wide.maxhp - dos.maxhp, 2500 + 1596);
+    let drain = Stub::with(&[(Ability::Mana, -5000)]);
+    assert_eq!(
+        secondary(&c, &class, &plain_race(0), &drain, false).maxmana,
+        0
+    );
+    assert_eq!(
+        secondary(&c, &class, &plain_race(0), &drain, true).maxmana as u16,
+        (-5000 + (3 * 200 + 3) * 2) as u16
     );
 }

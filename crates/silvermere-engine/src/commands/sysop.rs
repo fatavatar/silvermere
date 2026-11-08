@@ -420,7 +420,7 @@ pub fn cmd_sysop(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandLine
     let argc = line.argc();
     // LANCE answers everybody, before the key test (sic); an operator then also gets "Command not
     // recognized." from the chain below.
-    if argc == 2 && eq_ignore_case(line.arg(1), "lance") {
+    if argc == 2 && eq_ignore_case(line.arg(1), crate::dll_edits::lance_word(world)) {
         push(
             world,
             id,

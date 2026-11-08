@@ -102,6 +102,14 @@ pub struct GameConfig {
     pub keep_exp: bool,
     /// `LIGHTEVY`: SYSOP LIGHTNING may hit any player.
     pub light_evy: bool,
+    /// Behave as the original with the published `WCCMMUD.DLL` edit set applied, for a world
+    /// with more classes, races and shops than stock. Off is stock 1.11p. See
+    /// `silvermere_engine::dll_edits`.
+    pub published_dll_edits: bool,
+    /// Compute as the 32-bit Worldgroup module (`1.11p-WG3NT`) does where it differs from the
+    /// DOS one: numbers DOS keeps in a 16-bit `int` are 32-bit, and an unsigned 16-bit field
+    /// compares signed. Off is the DOS module. See `silvermere_engine::worldgroup`.
+    pub worldgroup_module: bool,
     /// `GENDERGO`: gold to change gender. -1..=32000.
     pub gender_gold: i32,
     /// `ENABLAWF`: players may choose Lawful.
@@ -253,6 +261,8 @@ impl Default for GameConfig {
             max_hup_items: 0,
             keep_exp: false,
             light_evy: true,
+            published_dll_edits: false,
+            worldgroup_module: false,
             gender_gold: 0,
             enable_lawful: true,
             ep_cycle: 60,
