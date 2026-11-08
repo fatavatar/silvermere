@@ -13,7 +13,9 @@ autotests = false
 workspace = true
 
 [dependencies]
+silvermere-auth.workspace = true
 silvermere-db.workspace = true
+silvermere-text.workspace = true
 silvermere-types.workspace = true
 jiff.workspace = true
 miniz_oxide.workspace = true

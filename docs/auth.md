@@ -23,6 +23,10 @@ ends at "authenticated, account loaded". Passwords travel inside the dialogue as
 | `created_at`, `last_login_at` | `accounts.created`, `accounts.last_login` | |
 | `failed_logins`, `locked_until` | the server's lockout tracker | In memory, not stored (see Lockout). |
 
+A live import of a Worldgroup realm creates the players' accounts from the host's
+(`WGSUSR2.DAT`): their passwords hashed, and the roles and flags the realm's keys gave them
+([import.md](import.md#the-hosts-accounts-and-the-modules-kept-records)).
+
 An account is loaded once at login and read from then on, as the module set a
 player's sysop flag once at entry. A role change takes effect at the
 account's next login.

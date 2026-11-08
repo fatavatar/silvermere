@@ -421,6 +421,9 @@ pub struct Content {
     pub set: LayoutSet,
     /// Data files of the other build beside the set: not read.
     pub ignored: Vec<String>,
+    /// A live Worldgroup realm's own host files: accounts, keys, the module's genbb
+    /// records ([`crate::host`]).
+    pub host: Option<crate::host::Host>,
 }
 
 impl Content {
@@ -651,7 +654,7 @@ fn sibling(path: &Path, ext: &str) -> Option<PathBuf> {
 /// file (`.PRE`, written while changes are uncommitted; the DLL opens its files in the
 /// host's pre-image mode) and an extension file
 /// (`.^01`, the continuation of an extended file).
-fn preflight_siblings(path: &Path) -> Result<(), ImportError> {
+pub(crate) fn preflight_siblings(path: &Path) -> Result<(), ImportError> {
     if let Some(pre) = sibling(path, "PRE") {
         return Err(ImportError::PreImage {
             file: path.to_path_buf(),
@@ -780,6 +783,9 @@ pub fn read_content(opts: &ImportOptions) -> Result<Content, ImportError> {
         ..Content::default()
     };
     content.files = files;
+    if opts.live && set == LayoutSet::Worldgroup {
+        content.host = crate::host::read_host(dir)?;
+    }
     let vacation = set_file_name(VACATION_FILE, set);
     if opts.live
         && let Ok(path) = find_file(dir, &vacation)
@@ -964,6 +970,8 @@ impl<'a> Importer<'a> {
         // a dry run has no database: it checks the books against this import's characters
         plan.check_bank_book_accounts(self.db.filter(|_| !self.opts.dry_run), self.opts.live)
             .await?;
+        plan.check_genbb_accounts(self.db.filter(|_| !self.opts.dry_run))
+            .await?;
         let read_time = read_started.elapsed();
         let errors: u32 = plan
             .counts
@@ -1053,6 +1061,11 @@ struct Plan<'a> {
     bank_books: Vec<&'a Decoded<decode::BankbookRecord>>,
     item_ownership: Vec<&'a Decoded<decode::ItemownRecord>>,
     users: Vec<&'a Decoded<decode::PlayerRecord>>,
+    /// A live Worldgroup realm's host files, when read.
+    host: Option<&'a crate::host::Host>,
+    host_accounts: Vec<&'a Decoded<crate::host::HostAccount>>,
+    profiles: Vec<&'a Decoded<decode::PermrecRecord>>,
+    evil_points: Vec<&'a Decoded<decode::EvilrecRecord>>,
 }
 
 impl<'a> Plan<'a> {
@@ -1178,6 +1191,36 @@ impl<'a> Plan<'a> {
             "userid",
             |r| r.userid.trimmed().to_lowercase()
         );
+        let host = c.host.as_ref();
+        let genbb = [crate::host::GENBB_FILE];
+        let (host_accounts, profiles, evil_points) = match host {
+            Some(h) => (
+                count(
+                    &mut counts,
+                    "accounts",
+                    dedupe(&h.accounts, &[], |r| r.userid.to_lowercase()),
+                    users_skip,
+                    "userid",
+                ),
+                count(
+                    &mut counts,
+                    "character_profiles",
+                    dedupe(&h.profiles, &genbb, |r| r.userid.trimmed().to_lowercase()),
+                    users_skip,
+                    "userid",
+                ),
+                count(
+                    &mut counts,
+                    "evil_points",
+                    dedupe(&h.evil_points, &genbb, |r| {
+                        r.userid.trimmed().to_lowercase()
+                    }),
+                    users_skip,
+                    "userid",
+                ),
+            ),
+            None => (Vec::new(), Vec::new(), Vec::new()),
+        };
         Self {
             counts,
             notes: Vec::new(),
@@ -1196,6 +1239,10 @@ impl<'a> Plan<'a> {
             bank_books,
             item_ownership,
             users,
+            host,
+            host_accounts,
+            profiles,
+            evil_points,
         }
     }
 
@@ -1208,6 +1255,7 @@ impl<'a> Plan<'a> {
         })?;
         try_conv(&self.gangs, |r| decode::to_gang(r, clock))?;
         try_conv(&self.users, |r| decode::to_character(r, clock))?;
+        try_conv(&self.profiles, |r| decode::to_profile(r, clock))?;
         Ok(())
     }
 
@@ -1225,10 +1273,16 @@ impl<'a> Plan<'a> {
         if self.bank_books.is_empty() {
             return Ok(());
         }
+        // the characters' accounts and the host's, which this import creates
         let users: HashSet<String> = self
             .users
             .iter()
             .map(|d| d.record.userid.trimmed().to_lowercase())
+            .chain(
+                self.host_accounts
+                    .iter()
+                    .map(|d| d.record.userid.to_lowercase()),
+            )
             .collect();
         let mut missing = 0;
         for d in &self.bank_books {
@@ -1267,6 +1321,76 @@ impl<'a> Plan<'a> {
             // (John, 2026-10-17); in the virgin set any such book is an error.
             c.skip_is_error = !live;
             c.reason = Some("no account for the userid".to_string());
+        }
+        Ok(())
+    }
+
+    /// The module's genbb records are written under the account of their user-id: one of
+    /// this import's characters or host accounts, or one already in the store. A record
+    /// whose user-id has none (a player since deleted) is skipped and reported, never an
+    /// error: the host kept these records after the character was gone.
+    async fn check_genbb_accounts(&mut self, db: Option<&Db>) -> Result<(), ImportError> {
+        if self.profiles.is_empty() && self.evil_points.is_empty() {
+            return Ok(());
+        }
+        let users: HashSet<String> = self
+            .users
+            .iter()
+            .map(|d| d.record.userid.trimmed().to_lowercase())
+            .chain(
+                self.host_accounts
+                    .iter()
+                    .map(|d| d.record.userid.to_lowercase()),
+            )
+            .collect();
+        let has_account = async |userid: &str| -> Result<bool, ImportError> {
+            if users.contains(&userid.to_lowercase()) {
+                return Ok(true);
+            }
+            let Some(db) = db else { return Ok(false) };
+            Ok(db
+                .accounts()
+                .by_username(userid)
+                .await
+                .map_err(|source| ImportError::Db {
+                    table: "accounts",
+                    source,
+                })?
+                .is_some())
+        };
+        let mut orphans = Vec::new();
+        let mut keep_profiles = Vec::new();
+        for d in &self.profiles {
+            let userid = d.record.userid.trimmed();
+            if has_account(&userid).await? {
+                keep_profiles.push(*d);
+            } else {
+                orphans.push(("character_profiles", d.file.clone(), d.ordinal, userid));
+            }
+        }
+        let mut keep_evil = Vec::new();
+        for d in &self.evil_points {
+            let userid = d.record.userid.trimmed();
+            if has_account(&userid).await? {
+                keep_evil.push(*d);
+            } else {
+                orphans.push(("evil_points", d.file.clone(), d.ordinal, userid));
+            }
+        }
+        self.profiles = keep_profiles;
+        self.evil_points = keep_evil;
+        for (table, file, ordinal, userid) in orphans {
+            if let Some(c) = self.counts.iter_mut().find(|c| c.table == table) {
+                c.written -= 1;
+                c.skipped += 1;
+                c.reason = Some("no account for the userid".to_string());
+            }
+            self.notes.push(Note {
+                file,
+                ordinal,
+                key: format!("userid {userid}"),
+                reason: format!("{userid} has no account and no character"),
+            });
         }
         Ok(())
     }
@@ -1339,26 +1463,30 @@ impl<'a> Plan<'a> {
             db.item_ownership().put_many(&owns, state),
         )
         .await?;
+        let mut notes = match self.host {
+            Some(host) => write_host_accounts(db, host, &self.host_accounts, state).await?,
+            None => Vec::new(),
+        };
         let characters = try_conv(&self.users, |r| decode::to_character(r, clock))?;
         let kept = write_characters(db, &characters, state).await?;
-        let notes = kept
-            .into_iter()
-            .map(|i| {
-                let d = self.users[i];
-                Note {
-                    file: d.file.clone(),
-                    ordinal: d.ordinal,
-                    key: format!("userid {}", d.record.userid.trimmed()),
-                    reason: "the account already has a character, kept (--reset-state \
+        notes.extend(kept.into_iter().map(|i| {
+            let d = self.users[i];
+            Note {
+                file: d.file.clone(),
+                ordinal: d.ordinal,
+                key: format!("userid {}", d.record.userid.trimmed()),
+                reason: "the account already has a character, kept (--reset-state \
                              rewrites it)"
-                        .to_string(),
-                }
-            })
-            .collect();
+                    .to_string(),
+            }
+        }));
         let books = conv(&self.bank_books, decode::to_bank_book);
         // Books without an account were counted (and refused unless --allow-duplicates)
         // by `check_bank_book_accounts`; they are skipped here.
         write_bank_books(db, &books, state).await?;
+        let profiles = try_conv(&self.profiles, |r| decode::to_profile(r, clock))?;
+        let evil = conv(&self.evil_points, decode::to_evil_points);
+        write_genbb(db, &profiles, &evil, state).await?;
         Ok(notes)
     }
 }
@@ -1468,4 +1596,127 @@ async fn write_bank_books(
         }
     }
     Ok(missing)
+}
+
+/// The host's accounts (a live Worldgroup realm, [`crate::host`]), before the characters, so
+/// each character goes under the account its player logged in with. An account is written
+/// from its record (password hashed, roles and flags from the keys it held) when this import
+/// creates it, when it has no password yet (an earlier import's), or with `--reset-state`;
+/// otherwise it is kept and reported. A user-id the accounts cannot take is reported.
+async fn write_host_accounts(
+    db: &Db,
+    host: &crate::host::Host,
+    accounts: &[&Decoded<crate::host::HostAccount>],
+    state: StateWrite,
+) -> Result<Vec<Note>, ImportError> {
+    let e = |source| ImportError::Db {
+        table: "accounts",
+        source,
+    };
+    let note = |d: &Decoded<crate::host::HostAccount>, reason: String| Note {
+        file: d.file.clone(),
+        ordinal: d.ordinal,
+        key: format!("userid {}", d.record.userid),
+        reason,
+    };
+    let mut notes = Vec::new();
+    if state == StateWrite::Untouched {
+        return Ok(notes);
+    }
+    for d in accounts {
+        let a = &d.record;
+        if let Err(why) = silvermere_auth::account::validate_username(&a.userid) {
+            notes.push(note(d, format!("not an account name here: {why}")));
+            continue;
+        }
+        let existing = db.accounts().by_username(&a.userid).await.map_err(e)?;
+        if let Some(row) = &existing
+            && !row.account.password_hash.is_empty()
+            && state != StateWrite::Reset
+        {
+            notes.push(note(
+                d,
+                "the account already has a password, kept (--reset-state rewrites it)".into(),
+            ));
+            continue;
+        }
+        let password_hash = if silvermere_auth::account::validate_password(&a.password).is_ok() {
+            silvermere_auth::password::hash(&a.password)
+        } else {
+            notes.push(note(
+                d,
+                "no usable password: set one with `silvermere account passwd`".into(),
+            ));
+            String::new()
+        };
+        let grants = host.grants(a);
+        match existing {
+            Some(row) => {
+                let account = Account {
+                    password_hash,
+                    // bit 0 is the sex, kept
+                    flags: (row.account.flags & 1) | grants.flags,
+                    roles: grants.roles,
+                    ..row.account
+                };
+                db.accounts().update(row.id, &account).await.map_err(e)?;
+            }
+            None => {
+                let account = Account {
+                    flags: grants.flags,
+                    roles: grants.roles,
+                    ..Account::new(&a.userid, &password_hash, jiff::Timestamp::now())
+                };
+                db.accounts().insert(&account).await.map_err(e)?;
+            }
+        }
+    }
+    Ok(notes)
+}
+
+/// The module's genbb records under the account of their user-id: created where the account
+/// has none, rewritten with `--reset-state`. Records whose user-id has no account were
+/// counted and reported by `check_genbb_accounts`.
+async fn write_genbb(
+    db: &Db,
+    profiles: &[silvermere_types::records::PermanentRecord],
+    evil: &[silvermere_types::records::EvilRecord],
+    state: StateWrite,
+) -> Result<(), ImportError> {
+    let e = |table| move |source| ImportError::Db { table, source };
+    for p in profiles {
+        let Some(account) = account_for(db, &p.userid, false).await? else {
+            continue;
+        };
+        let exists = db
+            .profiles()
+            .get(account)
+            .await
+            .map_err(e("character_profiles"))?
+            .is_some();
+        if state.writes(exists) {
+            db.profiles()
+                .put(account, p)
+                .await
+                .map_err(e("character_profiles"))?;
+        }
+    }
+    for v in evil {
+        let Some(account) = account_for(db, &v.userid, false).await? else {
+            continue;
+        };
+        let exists = db
+            .evil_points()
+            .get(account)
+            .await
+            .map_err(e("evil_points"))?
+            .is_some();
+        if state.writes(exists) {
+            db.evil_points()
+                .put(account, v)
+                .await
+                .map_err(e("evil_points"))?;
+        }
+    }
+    Ok(())
 }

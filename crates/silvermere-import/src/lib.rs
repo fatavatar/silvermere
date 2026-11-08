@@ -13,6 +13,7 @@ pub mod checks;
 pub mod decode;
 pub mod dll_text;
 pub mod dos_time;
+pub mod host;
 pub mod importer;
 pub mod json;
 pub mod patch;

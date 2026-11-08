@@ -1,8 +1,8 @@
 //! argon2id password hashes as PHC strings.
 //!
-//! Replaces Worldgroup's plain-text BBS passwords (and MBBSEmu's SHA-512 + salt): there
-//! is no user data to import, so there is no legacy
-//! variant. Verification reads the parameters from the stored string, so hashes made
+//! Replaces Worldgroup's plain-text BBS passwords (and MBBSEmu's SHA-512 + salt). A
+//! Worldgroup realm's stored passwords are hashed with [`hash`] on import
+//! (`silvermere-import`'s `host` module), so there is no legacy variant. Verification reads the parameters from the stored string, so hashes made
 //! with [`Cost::Low`] and with the defaults both verify.
 
 use argon2::password_hash::phc::PasswordHash;

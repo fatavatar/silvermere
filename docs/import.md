@@ -193,7 +193,9 @@ included. Stop the BBS first (or copy the files from a clean shutdown).
   `silvermere account passwd --missing` gives each a random one and prints
   `name<TAB>password` lines to hand on to the players (`--out FILE` writes them to a new
   file only its owner can read; `--dry-run` lists the accounts), and
-  `silvermere account passwd NAME` sets one by hand. The gangs, bank books, item ownership, active monsters, room
+  `silvermere account passwd NAME` sets one by hand. A Worldgroup realm copied with its
+  host files gets the players' own accounts, passwords and roles instead (see "The host's
+  accounts and the module's kept records"). The gangs, bank books, item ownership, active monsters, room
   state (floor items, coins, owners, ...), shop stock, monster state and `items.active` come
   from the realm's records through the same state path as the stock import: created where
   missing by default, rewritten with `--reset-state`, untouched with `--content-only`.
@@ -357,8 +359,60 @@ known-offset checks of the state records, and the dry-run checks on a real World
 2. Copy the realm's folder (the one holding `WCCUSER2.DAT`, `WCCMP002.DAT`, `wccupda2.dat`,
    ...), or zip it.
 3. Check it: `silvermere import --live --dry-run --from DIR` (see "Checking a realm").
-4. Import: `silvermere import --live --from DIR`, then `silvermere account passwd --missing`
-   to give the players' accounts passwords.
+4. Import: `silvermere import --live --from DIR`. With the host files (below) the players
+   log in with their BBS passwords; any account still without one is counted at the end,
+   and `silvermere account passwd --missing` gives each a random one.
+
+### The host's accounts and the module's kept records
+
+The module kept part of each player in the Worldgroup host's own files, which a copy of the
+whole BBS folder holds beside the realm. With `--live` and a Worldgroup set, the import reads
+them when they are there (`crates/silvermere-import/src/host.rs`); a copy of the module's
+files alone has none, and nothing changes:
+
+| File | What is read | Written to |
+|---|---|---|
+| `WGSUSR2.DAT` | each account's user-id, password (the host stored it as typed) and class | `accounts`: the password hashed (argon2id), the roles and flags below |
+| `WGSKEY2.DAT` | the keys of each user-id and of each class (`&USER`, ...) | the roles and flags below |
+| `WCCMMUD.MSG` | `SYSOPKEY`, `GAMOPKEY`, `GOSSKEY`, `AUCTKEY`, `LOANKEY` | the roles and flags below |
+| `WCCMMUD.INI` | `CODEC_OF_TWINKS`, `SYS_DISBAND_KEY` | `DEBUG`, `SYS_DISBAND_KEY` |
+| `WGSGEN2.DAT` | the module's genbb records: "WCC PERMANENT USER" (`permrec`, 208 bytes) and "WCC MAJOR MUD EVIL" (`evilrec`, 58 bytes); other modules' records are not read | `character_profiles` (settings, statline template, kept experience) and `evil_points` |
+
+`usracc` and the key record are the host's: only the members read are known, placed from a
+realm's files (user-id +0, password +30, class +240 of 304 bytes; a key record's keys from
++31). The genbb records are the module's `permrec` and `evilrec` with the 4-byte alignment
+rule (`WG_PERMREC`, `WG_EVILREC`).
+
+**Roles and flags.** Each account holds what the module's `haskey` tests gave it
+(WGSERVER.EXE 3.x, `haskey` at 0x424AC0): an empty lock is held; a lock is keys joined by
+`&` and `|`, taken left to right; a key is held when it is in the user's own list or the
+class's; the master flag holds every key, taken to be the `MASTER` key or the `SYSOP` class
+[I] (a realm's `Sysop`, class `SYSOP` with no keys, issued sysop commands). Then:
+
+- `sysop` for the holders of `SYSOPKEY`, `gameop` for those of `GAMOPKEY`, `player` for all;
+- `DEBUG` for a sysop when `WCCMMUD.INI` sets `CODEC_OF_TWINKS=78` (the developer gate);
+- `SYS_DISBAND_KEY` for a game operator holding that INI key when it is set;
+- `no_gossip` and `no_auction` for those given `GOSSKEY` and `AUCTKEY` by name (the master
+  flag held them too, and the module let staff keep both), `no_loan` for those without
+  `LOANKEY`.
+
+The other `SYS_*` INI keys are not carried: they were extra locks on sysops and game
+operators, and here those roles hold every `SYS_*` permission ([sysop.md](sysop.md)). A
+realm whose `SYSOPKEY` is a key every class holds (`NORMAL`) imports every player as a sysop,
+as they were.
+
+**When an account is written.** From its record (password, roles, flags) when the import
+creates it, when it has no password yet (made by an earlier import), or with
+`--reset-state`; an account with a password is kept and reported (`the account already has
+a password, kept`), since its player may have changed it. A user-id the accounts cannot take
+or an empty password is reported. The accounts are written before the characters, so each
+character goes under its player's account; an account with no character gets one at its
+first login. With `--content-only` none of this is written.
+
+**Kept records.** Written under the account of their user-id, created where the account has
+none and rewritten with `--reset-state`, as the bank books. A record whose user-id has no
+account and no character (a player since deleted) is skipped and reported, never an error.
+`deathdate` is a DOS date (`--legacy-tz`); the statline template keeps its spaces.
 
 ### Checking a realm
 

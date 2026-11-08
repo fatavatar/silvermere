@@ -26,3 +26,4 @@ mod smoke;
 mod stock_pins;
 mod stock_vir;
 mod worldgroup;
+mod worldgroup_host;

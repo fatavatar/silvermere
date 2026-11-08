@@ -95,7 +95,8 @@ fn check_as<R: Record>(set: LayoutSet) {
     ));
 }
 
-// `player` .. `textblk`: the 15 record types (updrec is T-009), in both layout sets.
+// `player` .. `textblk`: the 15 record types (updrec is T-009), and the two genbb records,
+// in both layout sets.
 #[test]
 fn every_member_decodes_from_its_own_bytes() {
     check::<decode::PlayerRecord>();
@@ -113,6 +114,8 @@ fn every_member_decodes_from_its_own_bytes() {
     check::<decode::GangRecord>();
     check::<decode::ActionRecord>();
     check::<decode::TextblkRecord>();
+    check::<decode::PermrecRecord>();
+    check::<decode::EvilrecRecord>();
 }
 
 #[test]
