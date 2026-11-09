@@ -65,6 +65,8 @@ max_hup_hp = 0   # 0..=100; MAXHUPHP
 max_hup_items = 0   # 0..=100; MAXHUPIT
 keep_exp = false
 light_evy = true
+published_dll_edits = false
+worldgroup_module = false
 gender_gold = 0   # -1..=32000; GENDERGO
 enable_lawful = true
 ep_cycle = 60   # 15..=360; EPCYCLE
@@ -105,3 +107,6 @@ at = "04:30"   # local time, in game.cleanup.tz
 keep = 30   # backups kept in data/backups; older ones are deleted
 after = ""   # command run after each backup, e.g. "rclone copy {dir} offsite:bucket/silvermere/"
 after_timeout_secs = 1800   # seconds before that command is killed
+
+[content]
+overlays = []   # content overlay folders applied after every import, e.g. ["areas/mudrev"] (docs/overlays.md)

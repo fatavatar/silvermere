@@ -62,12 +62,13 @@ impl LayoutSet {
     /// # Panics
     ///
     /// When the set has no layout for that record type (the Worldgroup set covers the
-    /// 16 record types of the data files, not `permrec`, `evilrec` or `roomkey`).
+    /// 16 record types of the data files and the two genbb records, not `roomkey`).
     pub fn layout(self, dos: &'static Layout) -> &'static Layout {
         match self {
             LayoutSet::Dos => dos,
             LayoutSet::Worldgroup => WORLDGROUP
                 .iter()
+                .chain(&WORLDGROUP_GENBB)
                 .find(|l| l.decoder == dos.decoder)
                 .copied()
                 .unwrap_or_else(|| panic!("no Worldgroup layout for {}", dos.decoder)),
@@ -1553,5 +1554,62 @@ pub const WG_UPDREC: Layout = Layout {
         f("type", 0x004, 1, 1),
         f("pad_0x005", 0x005, 3, 1),
         f("data", 0x008, 2024, 1),
+    ],
+};
+
+/// The Worldgroup 3.x layouts of the module's two records in the host's generic database
+/// (`WGSGEN2.DAT`), the byte-packed [`PERMREC`] and [`EVILREC`] with the alignment rule
+/// applied. A realm's records are 208 and 58 bytes, and their members decode at these offsets
+/// (kept experience, statline templates, first and last names).
+pub const WORLDGROUP_GENBB: [&Layout; 2] = [&WG_PERMREC, &WG_EVILREC];
+
+/// `permrec`: genbb "WCC PERMANENT USER" in `WGSGEN2.DAT`, 208 bytes.
+pub const WG_PERMREC: Layout = Layout {
+    decoder: "permrec",
+    len: 208,
+    fields: &[
+        f("userid", 0x000, 30, 1),
+        f("modnam", 0x01E, 25, 1),
+        f("pad_0x037", 0x037, 1, 1),
+        f("deathdate", 0x038, 2, 2),
+        f("palette", 0x03A, 1, 1),
+        f("msglevel", 0x03B, 1, 1),
+        f("settings", 0x03C, 2, 2),
+        f("pagemax", 0x03E, 1, 1),
+        f("hairlen", 0x03F, 1, 1),
+        f("haircol", 0x040, 1, 1),
+        f("unk_0x40", 0x041, 1, 1),
+        f("eyecol", 0x042, 1, 1),
+        f("unk_0x42", 0x043, 1, 1),
+        f("statline", 0x044, 1, 1),
+        f("fasttalk", 0x045, 1, 1),
+        f("verbose", 0x046, 1, 1),
+        f("unk_0x46", 0x047, 1, 1),
+        f("exp", 0x048, 4, 4),
+        f("firstname", 0x04C, 11, 1),
+        f("lastname", 0x057, 19, 1),
+        f("flags", 0x06A, 2, 2),
+        f("statfmt", 0x06C, 61, 1),
+        f("gossmax", 0x0A9, 1, 1),
+        f("auctmax", 0x0AA, 1, 1),
+        f("daybyte", 0x0AB, 1, 1),
+        f("unk_0xab", 0x0AC, 2, 2),
+        f("unk_0xad", 0x0AE, 2, 2),
+        f("expbil", 0x0B0, 4, 4),
+        f("exprem", 0x0B4, 4, 4),
+        f("unk_0xb7", 0x0B8, 22, 1),
+        f("pad_0x0ce", 0x0CE, 2, 1),
+    ],
+};
+
+/// `evilrec`: genbb "WCC MAJOR MUD EVIL" in `WGSGEN2.DAT`, 58 bytes.
+pub const WG_EVILREC: Layout = Layout {
+    decoder: "evilrec",
+    len: 58,
+    fields: &[
+        f("userid", 0x000, 30, 1),
+        f("modnam", 0x01E, 25, 1),
+        f("pad_0x037", 0x037, 1, 1),
+        f("evil", 0x038, 2, 2),
     ],
 };

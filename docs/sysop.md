@@ -44,6 +44,10 @@ An INI key was an extra lock on top of the role test and was empty by default, s
   `WCCMMUD.MSG` nor `WCCMMUD.RLN`, so no stock sysop passed the developer gate. This keeps
   EXPRESS_TRAIN's room-number teleport off by default.
 
+A live import of a Worldgroup realm copied with its host files grants these from the realm:
+the roles from the keys each player held, and `DEBUG` to its sysops when its `WCCMMUD.INI`
+set `CODEC_OF_TWINKS=78` ([import.md](import.md#the-hosts-accounts-and-the-modules-kept-records)).
+
 What is the sysop's alone is the original's own sysop-role test, kept at each sub-command. A
 player who is neither gets nothing from `SYSOP`: the line goes on through `execute_input`
 and ends as `Your command had no effect.`. An operator whose

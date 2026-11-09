@@ -380,6 +380,7 @@ fn apply_to_user(
     let anti_magic = user_has(world, t, Ability::AntiMagic);
     let poison_immune = user_has(world, t, Ability::PoisonImmune);
     let element_resist_pct = user_element_resist(world, t, spl);
+    let wide = crate::worldgroup::on(world);
     let deathhp = world
         .config
         .death_hp
@@ -412,6 +413,7 @@ fn apply_to_user(
         arena_safe: false,
         spells: &spells_f,
         items: &items_f,
+        wide,
     });
     apply_effect(slot, &cast, &mut target, state, rng)
 }

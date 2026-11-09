@@ -36,8 +36,8 @@ use super::effect::{SpellEffect, SpellEffects, Stat, TeleportPart};
 use super::resist::{
     apply_element_resistance, element_resistance, item_negates, may_resist,
     monster_magic_resistance, monster_mr_cut_pct, monster_mr_damage, monster_resists_area,
-    monster_resists_single, mr_cut_pct, mr_damage, player_resists, resist_chance, room_mr_damage,
-    spell_immune,
+    monster_resists_single, mr_cut_pct, mr_damage, player_mr_damage, player_resists, resist_chance,
+    room_mr_damage, spell_immune,
 };
 use super::{
     AmountRange, CannotUse, CasterLevel, CharacterSlots, LegalBand, MAXCHANCE, MonsterCandidate,
@@ -499,6 +499,7 @@ fn user<'a>(character: &'a mut Character) -> UserTarget<'a, 'static> {
         arena_safe: false,
         spells: &no_spells,
         items: &no_items,
+        wide: false,
     }
 }
 
@@ -1014,6 +1015,14 @@ fn player_mr_multiplier_reproduces_the_unsigned_wrap() {
     // A carried value above 50 is held to `MRCUT_MAX`.
     assert_eq!(mr_cut_pct(50, false, 120), 50);
     assert_eq!(mr_damage(100, 400, false, 0), 50);
+    // The Worldgroup module tests the resistance as an int: mr 40 takes 10% more, not half,
+    // and a carried cut is gone
+    assert_eq!(player_mr_damage(100, 40, false, 0, false), 50);
+    assert_eq!(player_mr_damage(100, 40, false, 0, true), 110);
+    assert_eq!(player_mr_damage(100, 50, false, 40, false), 60);
+    assert_eq!(player_mr_damage(100, 50, false, 40, true), 100);
+    assert_eq!(player_mr_damage(100, 150, false, 0, true), 50);
+    assert_eq!(player_mr_damage(100, 40, true, 0, true), 80);
 }
 
 // A monster's multiplier (the player's area and single casts on a monster) does not wrap:

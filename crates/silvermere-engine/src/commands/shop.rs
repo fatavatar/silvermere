@@ -246,9 +246,14 @@ fn hospital(world: &mut World, id: SessionId, name: &str) -> bool {
         return true;
     };
     if starts_with_ignore_case(name, "healing") {
-        // 2 copper per missing hit point, in a 16-bit int (negative: never affordable)
-        let fee = (i32::from(plr.maxhp) - i32::from(plr.hp)).wrapping_mul(2) as i16;
-        let price = economy::convert_currency(0, 0, 0, 0, i32::from(fee) as u32);
+        // 2 copper per missing hit point, in a 16-bit int on DOS (negative: never affordable)
+        let fee = (i32::from(plr.maxhp) - i32::from(plr.hp)).wrapping_mul(2);
+        let fee = if crate::worldgroup::on(world) {
+            fee
+        } else {
+            i32::from(fee as i16)
+        };
+        let price = economy::convert_currency(0, 0, 0, 0, fee as u32);
         let Some(paid) = economy::pay(plr.coins, price) else {
             tell_user(world, id, Msg::ShopHealPoor);
             return true;

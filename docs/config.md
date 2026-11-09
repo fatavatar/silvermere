@@ -175,6 +175,8 @@ Defaults are the values the original distribution shipped. `inactive_secs = 3600
 | `game.max_hup_items` | `SILVERMERE_GAME__MAX_HUP_ITEMS` | `0` | Most items lost on hangup. 0..=100. | `MAXHUPIT` |
 | `game.keep_exp` | `SILVERMERE_GAME__KEEP_EXP` | `false` | Keep some experience after the final death. | `KEEPEXP` |
 | `game.light_evy` | `SILVERMERE_GAME__LIGHT_EVY` | `true` | SYSOP LIGHTNING may hit any player. | `LIGHTEVY` |
+| `game.published_dll_edits` | `SILVERMERE_GAME__PUBLISHED_DLL_EDITS` | `false` | Behave as the original with the published `WCCMMUD.DLL` edit set: level-gated abilities and See Hidden are kept, every shop restocks, and the edited text. Off is stock 1.11p. | — |
+| `game.worldgroup_module` | `SILVERMERE_GAME__WORLDGROUP_MODULE` | `false` | Compute as the 32-bit Worldgroup module (`1.11p-WG3NT`) where it differs from DOS: no 16-bit cuts of prices, amounts typed, encumbrance, maximum hit points and the like. For a realm that ran on Worldgroup. Off is the DOS module. | — |
 | `game.gender_gold` | `SILVERMERE_GAME__GENDER_GOLD` | `0` | Gold to change gender. -1..=32000. | `GENDERGO` |
 | `game.enable_lawful` | `SILVERMERE_GAME__ENABLE_LAWFUL` | `true` | Players may choose the Lawful alignment. | `ENABLAWF` |
 | `game.ep_cycle` | `SILVERMERE_GAME__EP_CYCLE` | `60` | Minutes per evil-point forgiveness cycle. 15..=360. | `EPCYCLE` |
@@ -220,6 +222,14 @@ The daily backup the server takes, and the command run after each backup
 | `backup.keep` | `SILVERMERE_BACKUP__KEEP` | `30` | Backups kept in `data/backups/`: after each one there (scheduled, by hand, or before an upgrade) the oldest beyond this are deleted. 1..=10000. | — |
 | `backup.after` | `SILVERMERE_BACKUP__AFTER` | `""` | A command run after each successful backup, without a shell: `{file}` is the backup's path, `{dir}` the backups folder (also in `SILVERMERE_BACKUP_FILE` and `SILVERMERE_BACKUP_DIR`). Quote with `'...'` or `"..."`; for a shell, `sh -c '...'`. It is not given the database URL, its password or the admin tokens (it can still read what the server's user can). Its failure is logged and shown; the backup stays. Empty: none. | — |
 | `backup.after_timeout_secs` | `SILVERMERE_BACKUP__AFTER_TIMEOUT_SECS` | `1800` | Seconds `backup.after` may run before it is killed, with what it started. 1..=86400. | — |
+
+### [content]
+
+The content overlays the world is built with ([overlays.md](overlays.md)).
+
+| Key | Environment variable | Default | Meaning | Original name |
+|---|---|---|---|---|
+| `content.overlays` | `SILVERMERE_CONTENT__OVERLAYS` | `[]` | Overlay directories applied after every `silvermere import` (so also the stock world a first start builds), before any `--overlay`, and by `silvermere overlay check`/`apply` when given none. Applied in load order: each after the overlays its `after` names. Relative paths are from the directory silvermere runs in. | — |
 
 ## Original options with no key
 

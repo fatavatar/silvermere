@@ -1,8 +1,8 @@
 //! argon2id password hashes as PHC strings.
 //!
-//! Replaces Worldgroup's plain-text BBS passwords (and MBBSEmu's SHA-512 + salt): there
-//! is no user data to import, so there is no legacy
-//! variant. Verification reads the parameters from the stored string, so hashes made
+//! Replaces Worldgroup's plain-text BBS passwords (and MBBSEmu's SHA-512 + salt). A
+//! Worldgroup realm's stored passwords are hashed with [`hash`] on import
+//! (`silvermere-import`'s `host` module), so there is no legacy variant. Verification reads the parameters from the stored string, so hashes made
 //! with [`Cost::Low`] and with the defaults both verify.
 
 use argon2::password_hash::phc::PasswordHash;
@@ -45,6 +45,24 @@ pub fn hash_with(plain: &str, cost: Cost) -> String {
         .hash_password_with_salt(plain.as_bytes(), &salt)
         .expect("argon2id accepts any password and a 16-byte salt")
         .to_string()
+}
+
+/// The characters of a password a Worldgroup host compared: its `usracc` field is 10 bytes
+/// with the NUL, and the login prompt kept no more of what was typed.
+pub const BBS_PASSWORD_LEN: usize = 9;
+
+/// A password as a Worldgroup host compared it, for an account imported with its BBS
+/// password ([`crate::AccountFlags::BBS_PASSWORD`]): the first [`BBS_PASSWORD_LEN`]
+/// characters typed, lower case. The host's check (WGSERVER.EXE 3.x at 0x421180) compares the
+/// typed text with the stored password through `tolower`, character by character to the end
+/// of both, so `yourmother` and `YourMothe` both open an account stored as `yourmothe`. The
+/// import hashes the stored password in this form.
+pub fn bbs_form(typed: &str) -> String {
+    typed
+        .chars()
+        .take(BBS_PASSWORD_LEN)
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 /// Whether `plain` matches `hash`. The comparison of the derived keys is constant-time

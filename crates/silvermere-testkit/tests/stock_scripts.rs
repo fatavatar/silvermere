@@ -552,7 +552,7 @@ mod scripts {
         let blocks = st.blocks();
         for n in st.roots("randtext") {
             let (_, t) = &blocks[&(0, n)];
-            let ok = silvermere_engine::cycles::slow::event_line(t, 0).is_some();
+            let ok = silvermere_engine::cycles::slow::event_line(t, 0, false).is_some();
             // block 107 is a talk block ("shit:80") used as random text by mistake
             assert!(ok || n == 107, "{n}: {t:?}");
         }

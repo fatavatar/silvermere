@@ -1306,3 +1306,21 @@ leave them in E-mail to Sysop. Thanks.\r\n\r\n\
     assert_eq!(esc(&on), esc(format!("{combat_off}{tail}").as_bytes()));
     assert_eq!(esc(&off), esc(tail.as_bytes()));
 }
+
+#[test]
+fn the_published_dll_edits_word_the_hang_up() {
+    let config = GameConfig {
+        published_dll_edits: true,
+        ..test_config()
+    };
+    let mut h = Harness::new(config, 8, |_| {});
+    let watcher = h.playing(character("Wanda", special_rooms()[1]));
+    let id = h.playing(aldric());
+    let mark = h.log.len();
+    h.handle(EngineInput::Disconnect { id });
+    let seen = h.text_since(mark, watcher);
+    assert!(
+        seen.contains("\x1b[79D\x1b[K\x1b[1;37mAldric just hung up!!!\r\n"),
+        "{seen:?}"
+    );
+}

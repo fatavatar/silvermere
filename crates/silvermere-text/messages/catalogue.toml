@@ -40,6 +40,11 @@ text = "{@ANSI_CLRLINE}{@ANSI_WHITE}{who} just disconnected!!!\r"
 pattern = "player_disconnected"
 example = { who = "Bob" }
 
+[messages.player_hung_up]
+text = "{@ANSI_CLRLINE}{@ANSI_WHITE}{who} just hung up!!!\r"
+example = { who = "Bob" }
+note = "`player_disconnected` under the published DLL edit at 0x7C02F (`game.published_dll_edits`)."
+
 [messages.name_validating]
 text = "{@ANSI_LTCYAN}Please wait - Validating your name.\r "
 pattern = "name_validating"

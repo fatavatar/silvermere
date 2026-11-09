@@ -1,7 +1,7 @@
 //! The Worldgroup 3.x layouts: the byte-packed layouts with 4-byte alignment applied, the
 //! lengths of a Worldgroup realm's files, and the two corrections (`updrec`, `actmon`).
 
-use silvermere_types::records::layout::{self, DOS_DATA, WORLDGROUP};
+use silvermere_types::records::layout::{self, DOS_DATA, WORLDGROUP, WORLDGROUP_GENBB};
 use silvermere_types::records::{Field, Layout, LayoutSet};
 
 /// The record lengths of a Worldgroup 3.3 realm's files, as Btrieve opens them.
@@ -173,4 +173,41 @@ fn the_set_picks_the_layout() {
         assert_eq!(LayoutSet::Dos.layout(dos), *dos);
         assert_eq!(LayoutSet::Worldgroup.layout(dos), wg);
     }
+}
+
+// The two genbb records of `WGSGEN2.DAT`: the alignment rule exactly, at a realm's lengths.
+#[test]
+fn the_genbb_records_follow_the_alignment_rule() {
+    for (dos, wg, len) in [
+        (&layout::PERMREC, WORLDGROUP_GENBB[0], 208),
+        (&layout::EVILREC, WORLDGROUP_GENBB[1], 58),
+    ] {
+        let (members, rule_len) = aligned(dos);
+        let got: Vec<_> = wg
+            .fields
+            .iter()
+            .filter(|f| !is_pad(f))
+            .map(|f| (f.name, f.offset))
+            .collect();
+        assert_eq!(got, members, "{}", dos.decoder);
+        assert_eq!((rule_len, wg.len), (len, len), "{}", dos.decoder);
+        let mut at = 0;
+        for f in wg.fields {
+            assert_eq!(
+                f.offset, at,
+                "{}.{} follows the member before it",
+                wg.decoder, f.name
+            );
+            at += f.size;
+        }
+        assert_eq!(at, wg.len, "{} members cover the record", wg.decoder);
+        assert_eq!(LayoutSet::Worldgroup.layout(dos), wg);
+    }
+    let p = &layout::WG_PERMREC;
+    let at = |n| p.field(n).unwrap().offset;
+    assert_eq!(
+        (at("deathdate"), at("statfmt"), at("expbil")),
+        (0x38, 0x6C, 0xB0)
+    );
+    assert_eq!(layout::WG_EVILREC.field("evil").unwrap().offset, 0x38);
 }

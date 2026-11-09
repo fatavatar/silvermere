@@ -83,12 +83,14 @@ fn skill_level(level: i32) -> i32 {
 ///
 /// `c.critbonus` must already be the dynamic value ([`recalculate`] refreshes it first),
 /// because martial arts adds it. `abilities` totals over the character's sources (the
-/// ability value and has-ability look-ups).
+/// ability value and has-ability look-ups). `wide`: the Worldgroup module's 32-bit `int`
+/// (`game.worldgroup_module`).
 pub fn secondary(
     c: &Character,
     class: &Class,
     race: &Race,
     abilities: &dyn AbilityLookup,
+    wide: bool,
 ) -> Secondary {
     let intel = i32::from(c.intel);
     let wil = i32::from(c.wil);
@@ -185,8 +187,13 @@ pub fn secondary(
         Magery::Kai => (level - 1, 500),
         _ => (0, -150), // no magery
     };
-    // unsigned field, signed test.
-    let maxmana = i32::from(maxmana as i16).max(0);
+    // unsigned field, signed test on DOS; the Worldgroup module tests the field zero-extended,
+    // so it is never below 0 there.
+    let maxmana = if wide {
+        maxmana
+    } else {
+        i32::from(maxmana as i16).max(0)
+    };
 
     // one pass totals Spellcasting and, into `extra`, Magic Resistance.
     let (cast_abil, mr_abil) = abilities.pair(Ability::Spellcasting, Ability::MagicResist);
@@ -195,7 +202,13 @@ pub fn secondary(
 
     // base Health, not the buffed value.
     let bashea = i32::from(c.bashea);
-    let tmp = i32::from(((bashea - 50) * level) as i16) / 16; // 16-bit product
+    // a 16-bit product on DOS
+    let product = (bashea - 50) * level;
+    let tmp = if wide {
+        product
+    } else {
+        i32::from(product as i16)
+    } / 16;
     let maxhp = bashea / 2
         + level * i32::from(class.basehp)
         + level * i32::from(race.hpbonus)
@@ -283,7 +296,7 @@ pub fn recalculate(world: &World, c: &mut Character, mode: CalcMode) {
             spells: &spells,
             items: &items,
         };
-        secondary(c, class, race, &lookup)
+        secondary(c, class, race, &lookup, crate::worldgroup::on(world))
     };
     c.maxwgt = s.maxwgt as i16;
     c.perception = s.perception as i16;
@@ -313,10 +326,10 @@ pub fn recalculate(world: &World, c: &mut Character, mode: CalcMode) {
         c.maxhp = s.maxhp as i16;
     }
     match mode {
-        // `mana` is a short and `maxmana` unsigned, so the comparison
-        // is unsigned, as here.
+        // `mana` is a short and `maxmana` unsigned, so on DOS the comparison is unsigned;
+        // the Worldgroup module compares them as ints.
         CalcMode::KeepMaxHp => {
-            if c.mana as u16 > c.maxmana {
+            if mana_above_max(world, c) {
                 c.maxmana = c.mana as u16;
             }
             if c.mr > c.maxmr {
@@ -331,4 +344,14 @@ pub fn recalculate(world: &World, c: &mut Character, mode: CalcMode) {
     }
     c.mabase = s.mabase as u8;
     c.martial = s.martial as i16;
+}
+
+/// `mana > maxmana`: unsigned on DOS (a negative `mana` is above any maximum), as ints on the
+/// Worldgroup module.
+pub fn mana_above_max(world: &World, c: &Character) -> bool {
+    if crate::worldgroup::on(world) {
+        i32::from(c.mana) > i32::from(c.maxmana)
+    } else {
+        c.mana as u16 > c.maxmana
+    }
 }

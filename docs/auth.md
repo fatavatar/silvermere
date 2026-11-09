@@ -17,11 +17,22 @@ ends at "authenticated, account loaded". Passwords travel inside the dialogue as
 | `password_hash` | `accounts.password_hash` | argon2id PHC string, `argon2` crate defaults (19 MiB, 2 passes, 1 lane), 16-byte random salt. Passwords are 1-128 bytes; the BBS's 5-9 character rule is not enforced. |
 | `email` | `accounts.email` | Optional; the game never reads it. |
 | `sex` | bit 0 of `accounts.flags` | `M`/`F`: the game copies the account's sex into the character and picks pronouns from it. |
-| `flags` | bits 1-3 of `accounts.flags` | `no_gossip`, `no_auction`, `no_loan`. |
+| `flags` | bits 1-4 of `accounts.flags` | `no_gossip`, `no_auction`, `no_loan`; bit 4 `BBS_PASSWORD`, set by the import on an account that keeps its Worldgroup password (below). |
 | `roles` | `account_roles.role` (lowercase) | `player`, `sysop`, `gameop`. |
 | `perms` | `account_roles.role` (INI name) | Explicit grants, e.g. `SYS_GOTO_KEY`. |
 | `created_at`, `last_login_at` | `accounts.created`, `accounts.last_login` | |
 | `failed_logins`, `locked_until` | the server's lockout tracker | In memory, not stored (see Lockout). |
+
+A live import of a Worldgroup realm creates the players' accounts from the host's
+(`WGSUSR2.DAT`): their passwords hashed, and the roles and flags the realm's keys gave them
+([import.md](import.md#the-hosts-accounts-and-the-modules-kept-records)).
+Such a password is compared as the host compared it (WGSERVER.EXE 3.x, the check at
+0x421180): its `usracc` field held 9 characters and the prompt kept no more of what was
+typed, and the comparison went through `tolower`. So the first 9 characters typed count, in
+any case: an account stored as `yourmothe` opens with `yourmother` or `YourMother`. The
+import hashes the stored password in that form (`password::bbs_form`) and marks the account
+`BBS_PASSWORD`; setting a password (`silvermere account passwd`) clears the mark, and the new
+one is compared whole, case and all.
 
 An account is loaded once at login and read from then on, as the module set a
 player's sysop flag once at entry. A role change takes effect at the

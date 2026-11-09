@@ -34,6 +34,7 @@ pub mod commands;
 pub mod comms;
 pub mod cycles;
 pub mod display;
+pub mod dll_edits;
 pub mod event_loop;
 pub mod evil;
 pub mod gangs;
@@ -58,6 +59,7 @@ pub mod state;
 pub mod stock_faults;
 pub mod tell;
 pub mod world;
+pub mod worldgroup;
 
 pub use event_loop::{
     AdminRequest, AuditValue, ConnId, EchoMode, Engine, EngineInput, EngineOutput, GameEvent,

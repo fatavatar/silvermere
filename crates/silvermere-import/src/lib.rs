@@ -3,7 +3,9 @@
 //! Reads the legacy Btrieve data files (the virgin `.VIR` set, or a running realm's `.DAT`
 //! set with `--live`), unpacks the runtime text files into the assets directory, decodes the record layouts, applies the WCCUPDAT.DAT
 //! patches, converts the message files and writes the result into the normalised schema
-//! through silvermere-db. It depends on silvermere-types and silvermere-db only.
+//! through silvermere-db. It also applies content overlays (new and changed records written as
+//! TOML, [`overlay`]) to a world already in the database. It depends on silvermere-types and
+//! silvermere-db only.
 
 #![forbid(unsafe_code)]
 
@@ -13,8 +15,10 @@ pub mod checks;
 pub mod decode;
 pub mod dll_text;
 pub mod dos_time;
+pub mod host;
 pub mod importer;
 pub mod json;
+pub mod overlay;
 pub mod patch;
 pub mod stock;
 pub mod zip;

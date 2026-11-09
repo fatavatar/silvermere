@@ -1596,3 +1596,54 @@ fn menu_counts_plain_equals_the_text() {
         + "\x1b[1;30m[\x1b[0mMAJORMUD\x1b[1;30m]\x1b[0m: \x1b[0;37;40m";
     assert_eq!(h.text(id), want);
 }
+
+// The published DLL edits
+
+#[test]
+fn the_published_dll_edits_word_two_handed_weapons_and_the_edited_mark() {
+    for (edits, label, tag) in [
+        (false, "dagger (Two handed)", "EDITED"),
+        (true, "dagger (Weapon Hand)", "SYSOP"),
+    ] {
+        let mut w = world();
+        w.config.published_dll_edits = edits;
+        let dagger = w.items.get_mut(&ItemNo(DAGGER)).unwrap();
+        dagger.item_type = ItemType::Weapon;
+        dagger.wpntype = WeaponType::TwoHandSharp;
+        let id = aldric(&mut w);
+        edit(&mut w, id, |c| {
+            c.items[5] = ItemNo(DAGGER);
+            c.weapon = ItemNo(DAGGER);
+            c.immortal = 1;
+        });
+        display_inventory_items(&mut w, id);
+        let inventory = lines(&take(&mut w, id)).join(" ");
+        assert!(inventory.contains(label), "{inventory:?}");
+        display_scan_of_users(&mut w, id);
+        let who = lines(&take(&mut w, id)).join(" ");
+        assert!(who.contains(tag), "{who:?}");
+    }
+}
+
+// The Worldgroup module
+
+// The encumbrance line: DOS prints the coins' weight and the maximum cut to 16 bits
+#[test]
+fn the_worldgroup_module_prints_the_encumbrance_whole() {
+    for (wide, want) in [
+        (false, "Encumbrance: 34464/-32416"),
+        (true, "Encumbrance: 100000/33120"),
+    ] {
+        let mut w = world();
+        w.config.worldgroup_module = wide;
+        let id = aldric(&mut w);
+        edit(&mut w, id, |c| {
+            c.wgt = 0;
+            c.maxwgt = 33120u16 as i16;
+            c.coins.copper = 300_000;
+        });
+        display_inventory_items(&mut w, id);
+        let inventory = lines(&take(&mut w, id)).join(" ");
+        assert!(inventory.contains(want), "{inventory:?}");
+    }
+}

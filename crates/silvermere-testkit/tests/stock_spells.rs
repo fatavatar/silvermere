@@ -255,6 +255,7 @@ fn user<'a>(character: &'a mut Character) -> UserTarget<'a, 'static> {
         arena_safe: false,
         spells: &no_spells,
         items: &no_items,
+        wide: false,
     }
 }
 

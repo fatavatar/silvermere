@@ -18,6 +18,7 @@ database, asks for a sysop account if there is none, then serves.
 | [`backup`](#silvermere-backup) | write a consistent copy of the database | yes |
 | [`restore`](#silvermere-restore) | put a backup back | no, it refuses |
 | [`migrate`](#silvermere-migrate) | apply schema migrations | no, it refuses |
+| [`overlay`](#silvermere-overlay) | apply content overlays | `check` yes; `apply` no, it refuses |
 | [`admin token`](#silvermere-admin-token) | make admin API tokens | yes |
 | [`sysop`](#silvermere-sysop) | sysop commands over the admin API | needs one running |
 | [`healthcheck`](#silvermere-healthcheck) | probe the admin API's `/healthz` | needs one running |
@@ -181,8 +182,31 @@ silvermere import [OPTIONS] [ZIP|DIR]
 | `--patches <PATH>` | the patch file to apply (default: `WCCUPDAT.DAT` in `--from`) |
 | `--legacy-tz <ZONE>` | the zone the legacy server ran in (IANA name) for the records' DOS dates (default `UTC`) |
 | `--database-url <DATABASE_URL>` | database URL (`sqlite://` or `postgres://`); overrides `database.url` |
+| `--overlay <DIR>` | a content overlay to apply after the import (repeatable, applied in order; not with `--dry-run`); see [overlays.md](overlays.md) |
 
 A run that writes refuses while a server runs on the store.
+
+## `silvermere overlay`
+
+Content overlays: new and changed rooms, monsters, items, spells, shops, messages and text,
+written as TOML and applied to the world in the database. Details: [overlays.md](overlays.md).
+
+```
+silvermere overlay check [--database-url <URL>] [<DIR>...]
+silvermere overlay apply [--database-url <URL>] [<DIR>...]
+silvermere overlay show [--database-url <URL>] <KIND> <KEY>
+silvermere overlay export --base <URL> --name <NAME> --out <DIR> [--database-url <URL>]
+```
+
+| Command | Meaning |
+|---|---|
+| `overlay check [<DIR>...]` | build each overlay against the database and report what it would create, change or leave; writes nothing, so it is safe while the server runs. With no directories, the ones in `content.overlays` |
+| `overlay apply [<DIR>...]` | the same, then write them; refuses while a server runs on the store |
+| `overlay show <KIND> <KEY>` | print a stored record (`room 1/1`, `monster 1206`, `action wave`, ...) as TOML in the field names an overlay uses, to copy from |
+| `overlay export --base <URL> --name <NAME> --out <DIR>` | write what this database's content holds beyond the base world's (`--base`, a database URL) as an overlay named `NAME` in `DIR`: applied to the base, it gives this content back |
+
+Overlays run in load order (each after the overlays its `after` names, otherwise in the order
+given); the first one with a problem stops the rest, and nothing of that one is written.
 
 ## `silvermere backup`
 

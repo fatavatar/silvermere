@@ -355,8 +355,8 @@ pub fn cmd_repay(_world: &mut World, _id: SessionId, _cmd: Cmd, _line: &CommandL
 }
 
 /// BANKBOOK and BALANCE. In a bank the plain word shows that bank's balance; elsewhere it lists
-/// every bankbook, or `BANKBOOK {n}` shows bank number n (the number wraps past 32767, so
-/// `BANKBOOK 65537` shows bank 1, as in the original).
+/// every bankbook, or `BANKBOOK {n}` shows bank number n (on DOS the number wraps past 32767,
+/// so `BANKBOOK 65537` shows bank 1, as in the original).
 pub fn cmd_bankbook(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandLine) -> Handled {
     if world.session(id).and_then(|s| s.player()).is_none() {
         return Handled::NotCommand;
@@ -370,8 +370,14 @@ pub fn cmd_bankbook(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandL
     } else if line.argc() != 2 {
         display_users_bankbooks(world, id);
     } else {
-        // the cast to int, then to unsigned long: a negative number is no shop
-        let n = i32::from(leading_int(line.arg(1)) as i16);
+        // the cast to int (16 bits on DOS), then to unsigned long: a negative number is no
+        // shop
+        let n = leading_int(line.arg(1)) as i32;
+        let n = if crate::worldgroup::on(world) {
+            n
+        } else {
+            i32::from(n as i16)
+        };
         display_bank_balance(world, id, Some(ShopNo(n)));
     }
     Handled::Done

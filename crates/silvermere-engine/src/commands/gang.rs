@@ -1022,8 +1022,14 @@ pub fn cmd_markup(world: &mut World, id: SessionId, _cmd: Cmd, line: &CommandLin
         return Handled::Done;
     }
     stop_hiding(world, id);
-    // `leading_int32` cut to a 16-bit int
-    let pct = i32::from(leading_int32(line.arg(1)) as i16).clamp(0, MAXMARKUP) as u16;
+    // `leading_int32` as an int: cut to 16 bits on DOS
+    let pct = leading_int32(line.arg(1));
+    let pct = if crate::worldgroup::on(world) {
+        pct
+    } else {
+        i32::from(pct as i16)
+    };
+    let pct = pct.clamp(0, MAXMARKUP) as u16;
     if let Some(shp) = world.shops.get_mut(&shopnum) {
         shp.markup = pct;
     }

@@ -32,6 +32,7 @@ pub mod actmon;
 pub mod bankbook;
 pub mod class;
 pub mod gang;
+pub mod genbb;
 pub mod item;
 pub mod itemown;
 pub mod message;
@@ -48,6 +49,9 @@ pub use actmon::{ActmonRecord, to_active_monster};
 pub use bankbook::{BankbookRecord, to_bank_book};
 pub use class::{ClassRecord, to_class};
 pub use gang::{GangRecord, to_gang};
+pub use genbb::{
+    EVILREC_MODULE, EvilrecRecord, PERMREC_MODULE, PermrecRecord, to_evil_points, to_profile,
+};
 pub use item::{ItemRecord, to_item};
 pub use itemown::{ItemownRecord, to_item_ownership};
 pub use message::{MudmsgRecord, to_message};

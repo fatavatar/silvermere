@@ -4,6 +4,11 @@
 //! (:666) and `lookupPATEntry` (:687). PAT pages come in pairs that both start with `PP`;
 //! the copy with the higher usage count at +4 is active. Each 4-byte entry is
 //! `[page high][type][page low][page mid]`.
+//!
+//! Not in wbtrv32: a large file can hold an all-zero page where a PAT pair belongs, with the
+//! pair on the two pages after it, and the page numbers stored in the file do not count that
+//! page ([`Pat::find_blank_slots`]). A realm's 151 MB `WCCMP002` and 183 MB `WCCUPDA2` (4096-byte
+//! pages) both have it at physical page 30722, the slot of the 31st pair.
 
 use super::error::{Fault, ReadError};
 use super::header::{Header, u16_at, u32_at};
@@ -96,6 +101,8 @@ pub(crate) fn scan_first_pat(pair: &[u8], page_length: usize) -> Result<Vec<u32>
 pub(crate) struct Pat {
     cached_at: Option<u64>,
     pair: Vec<u8>,
+    /// The physical pages the stored page numbers skip, ascending.
+    blank_slots: Vec<u64>,
 }
 
 impl Pat {
@@ -103,7 +110,43 @@ impl Pat {
         Self {
             cached_at: None,
             pair: vec![0; usize::from(page_length) * 2],
+            blank_slots: Vec::new(),
         }
+    }
+
+    /// Walks the PAT slots of the whole file for all-zero pages followed by a PAT page. An
+    /// entry of any pair can name a page past any slot, so all of them are found before the
+    /// first lookup. The first pair is `scan_first_pat`'s to check.
+    pub(crate) fn find_blank_slots(
+        &mut self,
+        reader: &mut PageReader,
+        header: &Header,
+    ) -> Result<(), ReadError> {
+        let page_length = u64::from(header.page_length);
+        let entries_per_page = u64::from(header.page_length) / 4;
+        let mut page = vec![0; usize::from(header.page_length)];
+        let mut slot = 2 + entries_per_page;
+        loop {
+            let at = self.physical(slot);
+            if (at + 2) * page_length > header.file_length {
+                return Ok(());
+            }
+            reader.read_at(at * page_length, &mut page)?;
+            if page.iter().all(|&b| b == 0) {
+                reader.read_at((at + 1) * page_length, &mut page)?;
+                if has_pat_magic(&page) {
+                    self.blank_slots.push(at);
+                }
+            }
+            slot += entries_per_page;
+        }
+    }
+
+    /// The physical page of a page number as the file stores it.
+    pub(crate) fn physical(&self, stored: u64) -> u64 {
+        self.blank_slots
+            .iter()
+            .fold(stored, |page, &blank| page + u64::from(page >= blank))
     }
 
     /// `lookupPATEntry`: the type and physical offset of `logical`.
@@ -127,7 +170,7 @@ impl Pat {
             logical -= pages_per_pat;
             pat_page += u64::from(entries_per_page);
         }
-        let at = pat_page * page_length;
+        let at = self.physical(pat_page) * page_length;
         // `physicalOffset >= fileLength - pageLength * 2` is "overflowed, junk".
         if at + 2 * page_length >= header.file_length {
             return Ok(PatEntry::UNMAPPED);
@@ -144,14 +187,111 @@ impl Pat {
         let active = active_copy(&self.pair, len);
         let index = logical as usize * 4 + 4;
         let (code, page) = decode_entry(&active[index..index + 4]);
-        let offset = (page != 0x00FF_FFFF).then(|| u64::from(page) * page_length);
+        let offset = (page != 0x00FF_FFFF).then(|| self.physical(u64::from(page)) * page_length);
         Ok(PatEntry { kind: code, offset })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use super::super::header::{RecordType, Version};
     use super::*;
+
+    const PAGE: usize = 512;
+    /// Entries per PAT page at this page length, so the stride between PAT pairs.
+    const STRIDE: usize = PAGE / 4;
+
+    /// A v6 file of `pages` pages with a PAT pair at each slot; `blank` moves the pairs from
+    /// that slot on one page later and leaves the slot itself all zero.
+    fn file_with_pats(pages: usize, blank: Option<usize>) -> Vec<u8> {
+        let mut file = vec![1u8; pages * PAGE];
+        let mut slot = 2;
+        let mut shift = 0;
+        while slot + shift + 2 <= pages {
+            if blank == Some(slot) {
+                file[slot * PAGE..(slot + 1) * PAGE].fill(0);
+                shift = 1;
+            }
+            for page in [slot + shift, slot + shift + 1] {
+                file[page * PAGE..(page + 1) * PAGE].fill(0);
+                file[page * PAGE..page * PAGE + 2].copy_from_slice(b"PP");
+            }
+            slot += STRIDE;
+        }
+        file
+    }
+
+    fn header_for(file: &[u8]) -> Header {
+        Header {
+            version: Version::V6,
+            page_length: PAGE as u16,
+            page_count: (file.len() / PAGE) as u32,
+            record_length: 10,
+            physical_record_length: 12,
+            record_count: 0,
+            key_count: 0,
+            record_type: RecordType::Fixed,
+            usrflgs: 0,
+            file_length: file.len() as u64,
+            fcr_offset: PAGE as u64,
+            kat_offset: 0,
+            deleted_record_pointer: 0,
+        }
+    }
+
+    fn scan(file: Vec<u8>) -> Pat {
+        let header = header_for(&file);
+        let mut reader = PageReader::new(Box::new(Cursor::new(file)));
+        let mut pat = Pat::new(header.page_length);
+        pat.find_blank_slots(&mut reader, &header).unwrap();
+        pat
+    }
+
+    #[test]
+    fn stored_pages_skip_a_blank_slot() {
+        let slot = 2 + STRIDE * 2;
+        let pat = scan(file_with_pats(STRIDE * 4, Some(slot)));
+        assert_eq!(pat.blank_slots, vec![slot as u64]);
+        assert_eq!(pat.physical(slot as u64 - 1), slot as u64 - 1);
+        assert_eq!(pat.physical(slot as u64), slot as u64 + 1);
+        assert_eq!(pat.physical(slot as u64 + 100), slot as u64 + 101);
+    }
+
+    #[test]
+    fn a_file_without_a_blank_slot_keeps_its_page_numbers() {
+        let pat = scan(file_with_pats(STRIDE * 4, None));
+        assert!(pat.blank_slots.is_empty());
+        assert_eq!(pat.physical(300), 300);
+    }
+
+    #[test]
+    fn a_blank_slot_with_no_pat_page_after_it_is_not_skipped() {
+        let mut file = file_with_pats(STRIDE * 4, None);
+        let slot = 2 + STRIDE * 2;
+        file[slot * PAGE..(slot + 2) * PAGE].fill(0);
+        assert!(scan(file).blank_slots.is_empty());
+    }
+
+    #[test]
+    fn lookup_reads_the_moved_pair_and_maps_its_entries() {
+        let slot = 2 + STRIDE;
+        let mut file = file_with_pats(STRIDE * 3, Some(slot));
+        // the active copy of the moved pair: logical page 1 of this pair names stored page 200
+        let active = (slot + 2) * PAGE;
+        file[active + 4] = 1;
+        file[active + 8..active + 12].copy_from_slice(&[0, kind::DATA, 200, 0]);
+        let header = header_for(&file);
+        let mut reader = PageReader::new(Box::new(Cursor::new(file)));
+        let mut pat = Pat::new(header.page_length);
+        pat.find_blank_slots(&mut reader, &header).unwrap();
+        // past the first pair's `pages_per_pat` logical pages, as `lookup` numbers them
+        let logical = (STRIDE - 2 + 1) as u32;
+        let entry = pat.lookup(&mut reader, &header, logical).unwrap();
+        assert_eq!(entry.kind, kind::DATA);
+        assert_eq!(entry.offset, Some(201 * PAGE as u64));
+    }
 
     // BtrieveDatabase.cc:742 lookupPATEntry: "high low mid" byte order.
     #[test]

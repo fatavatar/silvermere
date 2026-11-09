@@ -414,7 +414,7 @@ fn active_monsters() -> Vec<Vec<u8>> {
 }
 
 /// The DOS live realm of `live_dat.rs` plus active monsters and the stock patch file.
-fn dos_realm(name: &str) -> PathBuf {
+pub(crate) fn dos_realm(name: &str) -> PathBuf {
     let d = realm(name);
     std::fs::write(
         d.join("WCCACMSR.DAT"),
@@ -460,7 +460,7 @@ fn repack_patches(dos: &Path) -> Vec<Vec<u8>> {
 /// The realm at `dos` in the Worldgroup 3.x set: each file the DOS live import reads
 /// re-packed under its `*2` name, with the same extension (the `.DAT` where the realm has
 /// one, the `.VIR` elsewhere), plus the vacation and patch files.
-fn worldgroup_realm(dos: &Path, name: &str) -> PathBuf {
+pub(crate) fn worldgroup_realm(dos: &Path, name: &str) -> PathBuf {
     let d = dir(name);
     let read = read_content(&ImportOptions::live(dos)).unwrap();
     for vir in std::iter::once("WCCMP001.VIR").chain(TABLE_FILES) {

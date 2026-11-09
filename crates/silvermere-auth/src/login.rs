@@ -34,7 +34,7 @@ use silvermere_text::catalogue::{self, Catalogue, TemplatePiece};
 use silvermere_types::ids::AccountId;
 
 use crate::AuthError;
-use crate::account::{Account, AccountStore, NewAccount, USERNAME_MAX, is_new};
+use crate::account::{Account, AccountFlags, AccountStore, NewAccount, USERNAME_MAX, is_new};
 use crate::lockout::{Lockout, LockoutConfig};
 use crate::password::{self, Secret};
 use crate::signup::SignupState;
@@ -755,7 +755,12 @@ impl<S: AccountStore, C: Clock> LoginService<S, C> {
             .await?;
             return Ok(Err(Refusal::NoPassword));
         }
-        if !password::verify(password, &account.password_hash) {
+        let matches = if account.flags.contains(AccountFlags::BBS_PASSWORD) {
+            password::verify(&password::bbs_form(password), &account.password_hash)
+        } else {
+            password::verify(password, &account.password_hash)
+        };
+        if !matches {
             let locked = self.lockout.record_failure(id, now);
             tracing::info!(target: "audit", account = id.0, username = %account.username, "login failed: wrong password");
             self.audit(

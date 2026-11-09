@@ -77,6 +77,11 @@ impl AccountFlags {
     pub const NO_AUCTION: Self = Self(1 << 2);
     /// Bank loans withheld (the original required `LOANKEY`).
     pub const NO_LOAN: Self = Self(1 << 3);
+    /// The password is the one a Worldgroup BBS held, imported (`silvermere import --live`):
+    /// it is compared as the host compared it ([`crate::password::bbs_form`]: the first 9
+    /// characters typed, any case). Setting a password clears it. Not in [`Self::NAMED`]:
+    /// granting it to another account would lock its player out.
+    pub const BBS_PASSWORD: Self = Self(1 << 4);
 
     /// The named flags, as the CLI and `docs/auth.md` spell them.
     pub const NAMED: [(&'static str, Self); 3] = [

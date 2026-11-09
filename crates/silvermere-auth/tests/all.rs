@@ -2,6 +2,7 @@
 //! crate's dependency graph is linked once rather than once per file. A new test file
 //! goes in the list below.
 
+mod bbs_password;
 mod cli;
 mod lockout;
 mod login_art;

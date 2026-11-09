@@ -368,6 +368,60 @@ mod shop {
         );
     }
 
+    // A price or quantity past 32767: DOS prints them as 16-bit ints, the Worldgroup module
+    // whole
+    #[test]
+    fn the_worldgroup_module_lists_big_prices_whole() {
+        for (wide, want) in [
+            (
+                false,
+                "quarterstaff                  -25536   -30336 copper farthings",
+            ),
+            (
+                true,
+                "quarterstaff                  40000    35200 copper farthings",
+            ),
+        ] {
+            let mut h = Harness::new();
+            h.world().config.worldgroup_module = wide;
+            let a = h.player("Aldric", WEAPON_ROOM);
+            let shop = h.world().shops.get_mut(&WEAPON_SHOP).unwrap();
+            shop.markup = 120;
+            shop.stock[0].qty = 40000;
+            let staff = h.world().items.get_mut(&QUARTERSTAFF).unwrap();
+            staff.cost = 16000;
+            staff.currency = Currency::Copper;
+            let out = h.line(a, "list");
+            assert!(out.contains(want), "{out:?}");
+        }
+    }
+
+    // Healing 20000 missing hit points costs 40000 copper: a negative 16-bit fee on DOS
+    #[test]
+    fn the_worldgroup_module_charges_a_big_healing_fee() {
+        for (wide, want) in [
+            (
+                false,
+                "You do not have sufficient funds to buy full healing!\n",
+            ),
+            (
+                true,
+                "You hand over 400 gold crowns and all your wounds are healed.\n",
+            ),
+        ] {
+            let mut h = Harness::new();
+            h.world().config.worldgroup_module = wide;
+            let a = h.player("Aldric", HOSPITAL_ROOM);
+            h.plr_mut(a).maxhp = 20_010;
+            h.plr_mut(a).hp = 10;
+            h.plr_mut(a).coins = Coins {
+                gold: 500,
+                ..Coins::default()
+            };
+            assert_eq!(h.line(a, "buy healing"), want);
+        }
+    }
+
     // the armour shop and general store screens of the same capture (ANSI stripped)
     #[test]
     fn list_armour_shop_and_general_store_equal_the_capture() {

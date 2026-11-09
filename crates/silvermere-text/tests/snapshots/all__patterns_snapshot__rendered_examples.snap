@@ -3372,6 +3372,11 @@ player_entered
   palette 1: \x1b[79D\x1b[KBob just entered the Realm.\r\n
   palette 2: \x1b[79D\x1b[KBob just entered the Realm.\r\n
   palette 3: \x1b[79D\x1b[KBob just entered the Realm.\r\n
+player_hung_up
+  palette 0: \x1b[79D\x1b[K\x1b[1;37mBob just hung up!!!\r\n
+  palette 1: \x1b[79D\x1b[K\x1b[1;37mBob just hung up!!!\r\n
+  palette 2: \x1b[79D\x1b[K\x1b[1;37mBob just hung up!!!\r\n
+  palette 3: \x1b[79D\x1b[K\x1b[1;37mBob just hung up!!!\r\n
 player_is_dead
   palette 0: \x1b[1;31;40m\r\nBob is dead.\r\n
   palette 1: \x1b[1;31;40m\r\nBob is dead.\r\n
