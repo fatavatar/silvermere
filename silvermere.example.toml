@@ -107,3 +107,6 @@ at = "04:30"   # local time, in game.cleanup.tz
 keep = 30   # backups kept in data/backups; older ones are deleted
 after = ""   # command run after each backup, e.g. "rclone copy {dir} offsite:bucket/silvermere/"
 after_timeout_secs = 1800   # seconds before that command is killed
+
+[content]
+overlays = []   # content overlay folders applied after every import, e.g. ["areas/mudrev"] (docs/overlays.md)

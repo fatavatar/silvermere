@@ -20,6 +20,7 @@ mod equivalence;
 mod import_latency;
 mod invariants;
 mod live_dat;
+mod overlay;
 mod patch_merge;
 mod post_update_equivalence;
 mod smoke;

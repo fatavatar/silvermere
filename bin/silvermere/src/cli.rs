@@ -49,6 +49,11 @@ pub enum Command {
     Import(ImportArgs),
     /// Apply schema migrations.
     Migrate,
+    /// Content overlays: new and changed records written as TOML (docs/overlays.md).
+    Overlay {
+        #[command(subcommand)]
+        action: crate::commands::overlay::OverlayCmd,
+    },
     /// Probe the admin API's /healthz (for container health checks).
     Healthcheck(crate::commands::healthcheck::HealthcheckArgs),
     /// Manage accounts.
@@ -253,6 +258,11 @@ impl Cli {
         }
         if let Some(Command::Import(i)) = &self.command
             && let Some(v) = &i.database_url
+        {
+            lines.push(format!("database.url = {}", quote(v)));
+        }
+        if let Some(Command::Overlay { action }) = &self.command
+            && let Some(v) = action.database_url()
         {
             lines.push(format!("database.url = {}", quote(v)));
         }

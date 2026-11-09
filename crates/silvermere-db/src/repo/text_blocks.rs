@@ -153,6 +153,31 @@ impl<'a> TextBlocks<'a> {
         }))
     }
 
+    /// Every part of block `number`, in part order; empty when there is none.
+    pub async fn parts(&self, number: TextBlockNo) -> Result<Vec<TextBlock>> {
+        let mut a = Args::new();
+        a.add(number.0);
+        let rows = a
+            .query(select_sql(
+                "text_blocks",
+                TEXT_COLS,
+                "WHERE number = $1 ORDER BY part",
+            ))
+            .fetch_all(&self.db.pool())
+            .await?;
+        rows.iter()
+            .map(|r| {
+                let g = Get::new(r, "text_blocks");
+                Ok(TextBlock {
+                    part: g.int("part")?,
+                    number: TextBlockNo(g.int("number")?),
+                    link: TextBlockNo(g.int("link")?),
+                    text: g.text("text")?,
+                })
+            })
+            .collect()
+    }
+
     /// Every part in `(number, part)` order.
     pub async fn all(&self) -> Result<Vec<TextBlock>> {
         let mut conn = self.db.pool().acquire().await?;
@@ -188,6 +213,18 @@ impl<'a> TextBlocks<'a> {
     pub async fn put(&self, t: &TextBlock) -> Result<()> {
         let mut conn = self.db.pool().acquire().await?;
         put_text(&mut conn, t).await
+    }
+
+    /// Deletes the parts of block `number` from `part` upward (a block rewritten shorter);
+    /// returns how many went.
+    pub async fn delete_from(&self, number: TextBlockNo, part: i16) -> Result<u64> {
+        let mut a = Args::new();
+        a.add(number.0).add(part);
+        let done = a
+            .query("DELETE FROM text_blocks WHERE number = $1 AND part >= $2".to_string())
+            .execute(&self.db.pool())
+            .await?;
+        Ok(done.rows_affected())
     }
 }
 

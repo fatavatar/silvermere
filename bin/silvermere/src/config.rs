@@ -28,8 +28,20 @@ pub struct Config {
     pub logging: LoggingCfg,
     /// `[backup]`: the scheduled backup and the after-backup command (T-150).
     pub backup: BackupCfg,
+    /// `[content]`: the content overlays the world is built with.
+    pub content: ContentCfg,
     /// `[admin]`: the admin API's tokens (`[[admin.tokens]]`).
     pub admin: AdminCfg,
+}
+
+/// `[content]` (docs/overlays.md).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContentCfg {
+    /// Overlay directories applied after every `silvermere import` (the stock world a first
+    /// start builds too), before any `--overlay`, and by `silvermere overlay check`/`apply`
+    /// when they are given none. Applied in load order (each overlay's `after`).
+    pub overlays: Vec<PathBuf>,
 }
 
 /// `[admin]`.
@@ -253,6 +265,7 @@ impl Default for Config {
             game: GameConfig::default(),
             logging: LoggingCfg::default(),
             backup: BackupCfg::default(),
+            content: ContentCfg::default(),
             admin: AdminCfg::default(),
         }
     }

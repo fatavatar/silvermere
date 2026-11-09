@@ -75,6 +75,11 @@ pub struct ImportCmd {
     /// Database URL (sqlite:// or postgres://); overrides `database.url`.
     #[arg(long)]
     pub database_url: Option<String>,
+    /// Content overlay directories to apply after the import, after those in `content.overlays`
+    /// (docs/overlays.md). A re-import rewrites the content the realm's files hold, so the
+    /// overlays go back on in the same run.
+    #[arg(long = "overlay", value_name = "DIR", conflicts_with = "dry_run")]
+    pub overlays: Vec<PathBuf>,
 }
 
 impl ImportCmd {
@@ -180,6 +185,14 @@ fn source(cmd: &ImportCmd, base: &Path) -> anyhow::Result<(PathBuf, Option<Unpac
     }
 }
 
+/// Applies the overlays in `dirs`, in load order, to the world just imported.
+async fn apply_overlays(
+    db: &Db,
+    dirs: &[PathBuf],
+) -> anyhow::Result<Vec<silvermere_import::overlay::Plan>> {
+    Ok(silvermere_import::overlay::apply_dirs(db, dirs, true).await?)
+}
+
 fn parse_zone(name: &str) -> Result<TimeZone, String> {
     TimeZone::get(name).map_err(|e| format!("unknown time zone {name:?}: {e}"))
 }
@@ -215,12 +228,36 @@ pub fn run(cfg: &Config, cmd: &ImportCmd) -> anyhow::Result<ExitCode> {
         // the stock package's own DLL must give the long screens (T-138)
         opts.stock_package = cmd.source.is_none() && cmd.from.is_none();
         let result = Importer::new(opts, db.as_ref()).run().await;
+        let overlays = match (&result, &db) {
+            (Ok(_), Some(db)) => {
+                // the configured overlays, then any given here
+                let dirs: Vec<PathBuf> = cfg
+                    .content
+                    .overlays
+                    .iter()
+                    .chain(&cmd.overlays)
+                    .cloned()
+                    .collect();
+                apply_overlays(db, &dirs).await
+            }
+            _ => Ok(Vec::new()),
+        };
         if let Some(db) = &db {
             db.close().await;
         }
         match result {
             Ok(report) => {
                 print!("{report}");
+                let overlays = match overlays {
+                    Ok(plans) => plans,
+                    Err(e) => {
+                        eprintln!("import written, but an overlay failed: {e}");
+                        return Ok(ExitCode::from(1));
+                    }
+                };
+                for plan in overlays {
+                    print!("{plan}");
+                }
                 println!(
                     "read and decoded in {:.1?}, written in {:.1?}",
                     report.read_time, report.write_time

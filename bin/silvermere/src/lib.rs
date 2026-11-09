@@ -696,6 +696,7 @@ pub fn run(args: impl IntoIterator<Item = std::ffi::OsString>) -> anyhow::Result
         Serve(a) => commands::serve::run(&cfg, a),
         Import(a) => commands::import::run(&cfg, a),
         Migrate => commands::migrate::run(&cfg),
+        Overlay { action } => commands::overlay::run(&cfg, action),
         Backup(a) => commands::backup::run(&cfg, a),
         Restore(a) => commands::restore::run(&cfg, a),
         Account { action } => commands::account::run(&cfg, action),

@@ -10,7 +10,7 @@ game's record layouts (`crates/silvermere-import`).
 silvermere import [ZIP|DIR | --from DIR|ZIP | --download] [--live] [--map-files WCCMP001.VIR,NEWMP001.VIR] [--dry-run]
                   [--json OUT] [--content-only | --reset-state] [--with-users]
                   [--allow-duplicates] [--legacy-tz ZONE] [--no-patches | --patches PATH]
-                  [--overwrite-assets] [--database-url URL]
+                  [--overwrite-assets] [--database-url URL] [--overlay DIR]...
 ```
 
 ## Sources
@@ -58,6 +58,7 @@ silvermere import [ZIP|DIR | --from DIR|ZIP | --download] [--live] [--map-files 
 | `--patches PATH` | The patch file to apply instead of `DIR/WCCUPDAT.DAT`. A missing file is a warning, not an error. |
 | `--overwrite-assets` | Replace the files already in `<data_dir>/assets/` (by default they are kept). |
 | `--database-url URL` | `sqlite://...` or `postgres://...`; also `SILVERMERE_DATABASE_URL`. Default `sqlite://data/silvermere.db`. Migrations run first. |
+| `--overlay DIR` | A content overlay to apply after the import (repeatable, in order); see [overlays.md](overlays.md). Not with `--dry-run`. |
 
 Each file gets a count line, then the timings (a dry run says "to write" for "written"):
 

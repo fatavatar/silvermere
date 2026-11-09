@@ -223,6 +223,14 @@ The daily backup the server takes, and the command run after each backup
 | `backup.after` | `SILVERMERE_BACKUP__AFTER` | `""` | A command run after each successful backup, without a shell: `{file}` is the backup's path, `{dir}` the backups folder (also in `SILVERMERE_BACKUP_FILE` and `SILVERMERE_BACKUP_DIR`). Quote with `'...'` or `"..."`; for a shell, `sh -c '...'`. It is not given the database URL, its password or the admin tokens (it can still read what the server's user can). Its failure is logged and shown; the backup stays. Empty: none. | — |
 | `backup.after_timeout_secs` | `SILVERMERE_BACKUP__AFTER_TIMEOUT_SECS` | `1800` | Seconds `backup.after` may run before it is killed, with what it started. 1..=86400. | — |
 
+### [content]
+
+The content overlays the world is built with ([overlays.md](overlays.md)).
+
+| Key | Environment variable | Default | Meaning | Original name |
+|---|---|---|---|---|
+| `content.overlays` | `SILVERMERE_CONTENT__OVERLAYS` | `[]` | Overlay directories applied after every `silvermere import` (so also the stock world a first start builds), before any `--overlay`, and by `silvermere overlay check`/`apply` when given none. Applied in load order: each after the overlays its `after` names. Relative paths are from the directory silvermere runs in. | — |
+
 ## Original options with no key
 
 | Original | What happened |

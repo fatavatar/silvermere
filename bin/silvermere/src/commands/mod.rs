@@ -8,6 +8,7 @@ pub mod first_start;
 pub mod healthcheck;
 pub mod import;
 pub mod migrate;
+pub mod overlay;
 pub mod restore;
 pub mod serve;
 pub mod service;

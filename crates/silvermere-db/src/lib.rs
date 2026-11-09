@@ -33,6 +33,7 @@ pub mod dialect;
 pub mod events;
 pub mod guard;
 pub mod latency;
+pub mod overlay_records;
 pub mod persist;
 pub mod pool;
 pub mod repo;
