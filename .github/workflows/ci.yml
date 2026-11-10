@@ -110,9 +110,22 @@ jobs:
         run: |
           echo "sha=$(sed -n 's/^pub const SHA256: &str = "\(.*\)";/\1/p' crates/silvermere-import/src/stock.rs)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
+        id: stock-cache
         with:
           path: ~/.cache/silvermere/stock/WCCMMUD_1.11p_DOS_MBBSEmu_v2.zip
           key: stock-${{ steps.stock.outputs.sha }}
+      # The publisher's server refuses GitHub-hosted runners. With the SILVERMERE_STOCK_TOKEN
+      # secret (read-only access to the private <owner>/silvermere-stock repository), a cache
+      # miss takes the zip from that repository's `stock` release instead; the next step checks
+      # its sha256 and downloads nothing when it matches. Without the secret this does nothing.
+      - name: Stock data from the private mirror (when not cached)
+        if: steps.stock-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SILVERMERE_STOCK_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "no SILVERMERE_STOCK_TOKEN secret: the next step downloads from the publisher" >&2; exit 0; fi
+          gh release download stock --repo "${{ github.repository_owner }}/silvermere-stock" \
+            --pattern WCCMMUD_1.11p_DOS_MBBSEmu_v2.zip --dir ~/.cache/silvermere/stock --clobber
       # The publisher's server refuses GitHub-hosted runners, so a failed download retries from
       # the mirror in the SILVERMERE_STOCK_URL secret when one is set; the sha256 is checked either way.
       - name: Stock data (download when not cached, check)
