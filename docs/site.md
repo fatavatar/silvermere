@@ -58,7 +58,15 @@ game prints and what it means: a lasting spell's start and end lines (`You feel 
 poisoned, held, losing hit points, regenerating), a player's casting lines, and the lines a
 monster's spell shows its target, the game's `%s` and `%d` written as `{target}`, `{source}` and
 `{dmg}`. Its columns are `Name`, `Message`, `EndMessage`, `Response`, `Source` (`Spell #105`),
-`Flags` (MegaMUD's effect bits), `Action` and `Kind` (`effect`, `cast`, `start` or `hit`). The
+`Flags` (MegaMUD's effect bits), `Action` and `Kind` (`effect`, `cast`, `start` or `hit`).
+
+A condition is read from the spell's abilities as the engine applies them: Blind User at any
+value, or light too dark to see by, blinds; Paralyze, or Confusion that loses every action,
+holds and stops attacks; Hold Person holds; Flee stops attacks; lesser Confusion (one action in
+ten or more) confuses; Poison poisons; damage each round loses hit points. Regeneration (hit
+points or mana) is set only for a spell that does nothing else, since MegaMUD and Majordomo read
+it as "the regeneration spell is up". A line several spells print takes the conditions most of
+them give, so a monster's spell that shares a haste line does not mark every haste blind. The
 table is added the way Access would add it (a definition, usage maps and a catalog row, with the
 catalog's indexes rebuilt); it has no index and no permission rows, which MME and Majordomo do
 not need.

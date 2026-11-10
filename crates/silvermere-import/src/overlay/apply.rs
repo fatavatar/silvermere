@@ -8,7 +8,7 @@
 //! state for new rows (a room's floor, a monster's counts, a shop's stock) and keeping it for
 //! rows that have it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
 use serde_json::{Map, Value, json};
@@ -154,12 +154,22 @@ impl fmt::Display for Plan {
     }
 }
 
-/// The world as the plan sees it: the database, read once per key, under the overlay's own
-/// records so far.
+/// The world as the plan sees it: the database under the overlay's own records so far.
+///
+/// A whole world's overlay touches every record, so little is held per record: a stored
+/// record is read when it is needed and not kept (only whether it exists is), and of the
+/// overlay's own records only those a later entry builds on (a change's record, a `from`
+/// template) are kept whole; of the rest, only their keys.
 struct World<'a> {
     db: &'a Db,
-    stored: HashMap<(Kind, Key), Option<Value>>,
+    /// Whether the record at each key looked up exists in the database.
+    known: HashMap<(Kind, Key), bool>,
+    /// The overlay's records so far that a later entry builds on.
     pending: HashMap<(Kind, Key), Value>,
+    /// The key of every record the overlay has made so far.
+    made: HashSet<(Kind, Key)>,
+    /// The keys whose records a later entry reads: what `pending` keeps.
+    keep: HashSet<(Kind, Key)>,
 }
 
 fn db_err(e: silvermere_db::DbError) -> OverlayError {
@@ -178,10 +188,20 @@ fn number<T: TryFrom<i64>>(key: Key) -> Option<T> {
 }
 
 impl<'a> World<'a> {
+    fn new(db: &'a Db) -> Self {
+        World {
+            db,
+            known: HashMap::new(),
+            pending: HashMap::new(),
+            made: HashSet::new(),
+            keep: HashSet::new(),
+        }
+    }
+
     /// The stored record at `kind`/`key`, as its serde form (text: `{link, text}`).
     async fn stored(&mut self, kind: Kind, key: Key) -> Result<Option<Value>, OverlayError> {
-        if let Some(v) = self.stored.get(&(kind, key.clone())) {
-            return Ok(v.clone());
+        if self.known.get(&(kind, key.clone())) == Some(&false) {
+            return Ok(None);
         }
         let db = self.db;
         let v = match (kind, key.clone()) {
@@ -281,32 +301,53 @@ impl<'a> World<'a> {
                 .map(|r| to_value(&r)),
             _ => None,
         };
-        self.stored.insert((kind, key), v.clone());
+        self.known.insert((kind, key), v.is_some());
         Ok(v)
     }
 
-    /// The record as the overlay leaves it so far: its own, else the stored one.
+    /// The record as the overlay leaves it so far: its own, else the stored one. Of the
+    /// overlay's own, only those in `keep` are held.
     async fn current(&mut self, kind: Kind, key: Key) -> Result<Option<Value>, OverlayError> {
         if let Some(v) = self.pending.get(&(kind, key.clone())) {
             return Ok(Some(v.clone()));
         }
+        debug_assert!(
+            !self.made.contains(&(kind, key.clone())),
+            "{kind} {key}: read back but not kept"
+        );
         self.stored(kind, key).await
     }
 
+    /// Records the overlay's record at `id`: `kept` is the record when a later entry reads it
+    /// (from [`World::to_keep`]).
+    fn made(&mut self, id: (Kind, Key), kept: Option<Value>) {
+        if let Some(v) = kept {
+            self.pending.insert(id.clone(), v);
+        }
+        self.made.insert(id);
+    }
+
+    /// A copy of `v` when a later entry reads the record at `id`.
+    fn to_keep(&self, id: &(Kind, Key), v: &Value) -> Option<Value> {
+        self.keep.contains(id).then(|| v.clone())
+    }
+
     async fn exists(&mut self, kind: Kind, key: Key) -> Result<bool, OverlayError> {
-        Ok(self.current(kind, key).await?.is_some())
+        let id = (kind, key);
+        if self.made.contains(&id) {
+            return Ok(true);
+        }
+        if let Some(known) = self.known.get(&id) {
+            return Ok(*known);
+        }
+        Ok(self.stored(id.0, id.1).await?.is_some())
     }
 }
 
 /// The stored record at `kind`/`key` as an overlay names its fields (a text as `{link, text}`),
 /// `None` when there is none: what `silvermere overlay show` prints.
 pub async fn stored_record(db: &Db, kind: Kind, key: Key) -> Result<Option<Value>, OverlayError> {
-    let mut world = World {
-        db,
-        stored: HashMap::new(),
-        pending: HashMap::new(),
-    };
-    world.stored(kind, key).await
+    World::new(db).stored(kind, key).await
 }
 
 /// A record without what play changes (a room's floor and monsters, a monster's counts, an
@@ -547,22 +588,42 @@ async fn new_base(world: &mut World<'_>, e: &Entry) -> Result<Value, String> {
 }
 
 /// Builds and checks every record of `overlay` against `db`. Nothing is written.
-pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
-    let mut world = World {
-        db,
-        stored: HashMap::new(),
-        pending: HashMap::new(),
-    };
+pub async fn plan(db: &Db, mut overlay: Overlay) -> Result<Plan, OverlayError> {
+    let entries = std::mem::take(&mut overlay.entries);
+    let mut world = World::new(db);
+    // the overlay's records a later entry builds on (changes it, or names it as its `from`);
+    // any other is read from the database
+    let mut seen: HashSet<(Kind, Key)> = HashSet::new();
+    for e in &entries {
+        let id = (e.kind, e.key.clone());
+        if e.change && seen.contains(&id) {
+            world.keep.insert(id.clone());
+        }
+        if let Some(from) = &e.from
+            && seen.contains(&(e.kind, from.clone()))
+        {
+            world.keep.insert((e.kind, from.clone()));
+        }
+        seen.insert(id);
+    }
+    drop(seen);
     let mut problems: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut order: Vec<(Kind, Key)> = Vec::new();
     let mut planned: HashMap<(Kind, Key), Planned> = HashMap::new();
     let mut created_here: HashMap<(Kind, Key), Origin> = HashMap::new();
-    // what each record started as (its template, blank or stored self): the numbers it
-    // already held are the realm's business, not the overlay's
-    let mut starts: HashMap<(Kind, Key), Value> = HashMap::new();
+    // the numbers each record held as it started (its template, blank or stored self): the
+    // realm's business, not the overlay's (none, for most)
+    let mut starts: HashMap<(Kind, Key), (Vec<Ref>, Vec<Ref>)> = HashMap::new();
+    let start_refs = |kind: Kind, key: &Key, v: &Value| {
+        typed(kind, key.clone(), v.clone())
+            .map(|r| references(&r))
+            .unwrap_or_default()
+    };
 
-    for e in &overlay.entries {
+    // each entry is dropped once planned: a whole world's overlay is not held beside its plan
+    for e in entries {
+        let e = &e;
         let id = (e.kind, e.key.clone());
         let fail = |why: String| format!("{}: {} {}: {why}", e.origin, e.kind, e.key);
         let stored = world.stored(e.kind, e.key.clone()).await?;
@@ -574,7 +635,10 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
                 ));
                 continue;
             };
-            starts.entry(id.clone()).or_insert_with(|| base.clone());
+            if !starts.contains_key(&id) {
+                let refs = start_refs(e.kind, &e.key, &base);
+                starts.insert(id.clone(), refs);
+            }
             let after = match merged(e.kind, &base, &e.values) {
                 Ok(v) => v,
                 Err(why) => {
@@ -606,8 +670,12 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
             // a change this overlay (or one it overrides) made before: a field may hold the
             // value that overlay last set rather than `was`, as long as nobody has changed it
             // since
+            // play state (a shop's stock on hand, a room's floor) is not the overlay's: compared
+            // without it
+            let d_base = design(e.kind, &base);
+            let d_expected = design(e.kind, &expected);
             let mut revised = false;
-            if !own && expected != base {
+            if !own && d_expected != d_base {
                 let mut excused: Vec<(String, Value)> = Vec::new();
                 for name in std::iter::once(&overlay.name).chain(overlay.overrides.iter()) {
                     let last =
@@ -615,28 +683,31 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
                             .await
                             .map_err(db_err)?;
                     if let Some(Ok(Value::Object(last))) = last.map(|f| serde_json::from_str(&f)) {
-                        excused.extend(last);
+                        excused.extend(last.into_iter().map(|(f, v)| {
+                            let v = design(e.kind, &json!({ f.as_str(): v }))[f.as_str()].clone();
+                            (f, v)
+                        }));
                     }
                 }
                 revised = !excused.is_empty()
                     && e.was.keys().all(|k| {
-                        let now = base.get(k.as_str());
-                        expected.get(k.as_str()) == now
+                        let now = d_base.get(k.as_str());
+                        d_expected.get(k.as_str()) == now
                             || excused.iter().any(|(f, v)| f == k && Some(v) == now)
                     });
             }
-            if after == base {
+            if design(e.kind, &after) == d_base {
                 (after, Action::Unchanged, own)
-            } else if expected != base && !revised {
+            } else if d_expected != d_base && !revised {
                 let diffs: Vec<String> = e
                     .was
                     .keys()
-                    .filter(|k| expected.get(k.as_str()) != base.get(k.as_str()))
+                    .filter(|k| d_expected.get(k.as_str()) != d_base.get(k.as_str()))
                     .map(|k| {
                         format!(
                             "`{k}` is {}, the overlay expects {}",
-                            base.get(k.as_str()).unwrap_or(&Value::Null),
-                            expected.get(k.as_str()).unwrap_or(&Value::Null)
+                            d_base.get(k.as_str()).unwrap_or(&Value::Null),
+                            d_expected.get(k.as_str()).unwrap_or(&Value::Null)
                         )
                     })
                     .collect();
@@ -702,7 +773,12 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
             .await;
             let v = match built {
                 Ok((start, v)) => {
-                    starts.entry(id.clone()).or_insert(start);
+                    if !starts.contains_key(&id) {
+                        let refs = start_refs(e.kind, &e.key, &start);
+                        if !refs.0.is_empty() || !refs.1.is_empty() {
+                            starts.insert(id.clone(), refs);
+                        }
+                    }
                     v
                 }
                 Err(why) => {
@@ -721,13 +797,15 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
         if changed_fields.is_none() {
             changed_fields = planned.get(&id).and_then(|p| p.changed_fields.clone());
         }
-        let record = match typed(e.kind, e.key.clone(), value.clone()) {
+        let kept = world.to_keep(&id, &value);
+        let record = match typed(e.kind, e.key.clone(), value) {
             Ok(r) => r,
             Err(why) => {
                 problems.push(fail(why));
                 continue;
             }
         };
+        world.made(id.clone(), kept);
         if let Record::Text(parts) = &record {
             let text: String = parts.iter().map(|p| p.text.as_str()).collect();
             for (i, line) in text.lines().enumerate() {
@@ -743,7 +821,6 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
                 }
             }
         }
-        world.pending.insert(id.clone(), value);
         if !planned.contains_key(&id) {
             order.push(id.clone());
         }
@@ -768,11 +845,7 @@ pub async fn plan(db: &Db, overlay: &Overlay) -> Result<Plan, OverlayError> {
             continue;
         }
         let (mut hard, mut soft) = references(&p.record);
-        if let Some(start) = starts
-            .get(id)
-            .and_then(|v| typed(p.kind, p.key.clone(), v.clone()).ok())
-        {
-            let (had_hard, had_soft) = references(&start);
+        if let Some((had_hard, had_soft)) = starts.get(id) {
             hard.retain(|r| !had_hard.contains(r));
             soft.retain(|r| !had_soft.contains(r));
         }
@@ -1128,7 +1201,7 @@ pub async fn apply_dirs(
         return Err(OverlayError::Invalid(missing));
     }
     let mut plans = Vec::new();
-    for o in &ordered {
+    for o in ordered {
         let p = plan(db, o).await?;
         if write_them {
             write(db, &p).await?;
@@ -1136,6 +1209,30 @@ pub async fn apply_dirs(
         plans.push(p);
     }
     Ok(plans)
+}
+
+/// Records [`write`] copies out of a plan per database call, so a whole world's plan is not
+/// held twice.
+const WRITE_BATCH: usize = 2000;
+
+/// Writes the plan's records of one kind in batches: `put_kind!(todo, Record::Room(r) =>
+/// copy, batch => call)`.
+macro_rules! put_kind {
+    ($todo:expr, $pat:pat => $copy:expr, $batch:ident => $call:expr) => {{
+        let mut $batch = Vec::new();
+        for p in $todo {
+            if let $pat = &p.record {
+                $batch.push($copy);
+                if $batch.len() == WRITE_BATCH {
+                    $call.await?;
+                    $batch.clear();
+                }
+            }
+        }
+        if !$batch.is_empty() {
+            $call.await?;
+        }
+    }};
 }
 
 /// Writes `plan`: every record not already as planned, kind by kind, state created for new
@@ -1146,124 +1243,49 @@ pub async fn write(db: &Db, plan: &Plan) -> Result<(), OverlayError> {
             .iter()
             .filter(|p| p.action != Action::Unchanged)
     };
-    let rooms: Vec<Room> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Room(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let monsters: Vec<KnownMonster> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Monster(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let items: Vec<Item> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Item(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let spells: Vec<Spell> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Spell(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let shops: Vec<Shop> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Shop(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let messages: Vec<Message> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Message(r) => Some(r.clone()),
-            _ => None,
-        })
-        .collect();
-    let classes: Vec<Class> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Class(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let races: Vec<Race> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Race(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let actions: Vec<ActionRecord> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Action(r) => Some((**r).clone()),
-            _ => None,
-        })
-        .collect();
-    let texts: Vec<&Vec<TextBlock>> = todo()
-        .filter_map(|p| match &p.record {
-            Record::Text(r) => Some(r),
-            _ => None,
-        })
-        .collect();
-
-    if !rooms.is_empty() {
-        db.rooms()
-            .put_many(&rooms, StateWrite::CreateMissing)
-            .await?;
-    }
-    if !monsters.is_empty() {
-        db.monsters()
-            .put_many(&monsters, StateWrite::CreateMissing)
-            .await?;
-    }
-    if !items.is_empty() {
-        db.items()
-            .put_many(&items, StateWrite::CreateMissing)
-            .await?;
-    }
-    if !spells.is_empty() {
-        db.spells().put_many(&spells).await?;
-    }
-    if !shops.is_empty() {
-        db.shops()
-            .put_many(&shops, StateWrite::CreateMissing)
-            .await?;
-    }
-    if !messages.is_empty() {
-        db.messages().put_many(&messages).await?;
-    }
-    if !classes.is_empty() {
-        db.classes().put_many(&classes).await?;
-    }
-    if !races.is_empty() {
-        db.races().put_many(&races).await?;
-    }
-    if !actions.is_empty() {
-        db.actions().put_many(&actions).await?;
-    }
-    for parts in texts {
+    put_kind!(todo(), Record::Room(r) => (**r).clone(),
+        b => db.rooms().put_many(&b, StateWrite::CreateMissing));
+    put_kind!(todo(), Record::Monster(r) => (**r).clone(),
+        b => db.monsters().put_many(&b, StateWrite::CreateMissing));
+    put_kind!(todo(), Record::Item(r) => (**r).clone(),
+        b => db.items().put_many(&b, StateWrite::CreateMissing));
+    put_kind!(todo(), Record::Spell(r) => (**r).clone(), b => db.spells().put_many(&b));
+    put_kind!(todo(), Record::Shop(r) => (**r).clone(),
+        b => db.shops().put_many(&b, StateWrite::CreateMissing));
+    put_kind!(todo(), Record::Message(r) => r.clone(), b => db.messages().put_many(&b));
+    put_kind!(todo(), Record::Class(r) => (**r).clone(), b => db.classes().put_many(&b));
+    put_kind!(todo(), Record::Race(r) => (**r).clone(), b => db.races().put_many(&b));
+    put_kind!(todo(), Record::Action(r) => (**r).clone(), b => db.actions().put_many(&b));
+    for p in todo() {
+        let Record::Text(parts) = &p.record else {
+            continue;
+        };
         let Some(first) = parts.first() else { continue };
         let count = i16::try_from(parts.len()).unwrap_or(i16::MAX);
         db.text_blocks().delete_from(first.number, count).await?;
         db.text_blocks().put_many(parts).await?;
     }
-    for p in plan.records.iter().filter(|p| p.created) {
-        overlay_records::record(db, p.kind.name(), &p.key.to_string(), &plan.overlay).await?;
-    }
-    for p in &plan.records {
-        if let Some(fields) = &p.changed_fields {
-            let fields = Value::Object(fields.clone()).to_string();
-            overlay_records::record_change(
-                db,
-                p.kind.name(),
-                &p.key.to_string(),
-                &plan.overlay,
-                &fields,
-            )
-            .await?;
-        }
-    }
+    let owned: Vec<(String, String)> = plan
+        .records
+        .iter()
+        .filter(|p| p.created)
+        .map(|p| (p.kind.name().to_owned(), p.key.to_string()))
+        .collect();
+    let changed: Vec<(String, String, String)> = plan
+        .records
+        .iter()
+        .filter_map(|p| {
+            let fields = p.changed_fields.as_ref()?;
+            Some((
+                p.kind.name().to_owned(),
+                p.key.to_string(),
+                Value::Object(fields.clone()).to_string(),
+            ))
+        })
+        .collect();
+    overlay_records::record_many(db, &plan.overlay, &owned, &changed)
+        .await
+        .map_err(db_err)?;
     Ok(())
 }
 
@@ -1378,11 +1400,7 @@ pub async fn adopt_dir(
             report.taken_over += 1;
             continue;
         }
-        let mut world = World {
-            db,
-            stored: HashMap::new(),
-            pending: HashMap::new(),
-        };
+        let mut world = World::new(db);
         let built = async {
             let mut v = new_base(&mut world, e).await?;
             if e.kind == Kind::Text {

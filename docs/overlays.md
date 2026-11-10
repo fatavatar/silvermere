@@ -152,7 +152,9 @@ was = { deathspell = 0 }
 `set` is merged onto the record; `was` holds the values the overlay expects to replace. When
 the record holds something else the whole overlay stops, so an overlay written against one
 realm never overwrites a record a later edit or another overlay changed. A change whose `set`
-is already in place is reported unchanged, so re-applying is safe.
+is already in place is reported unchanged, so re-applying is safe. What play changes (a shop's
+stock on hand, a room's floor) is left out of both comparisons: a shop that has sold since still
+holds the change.
 
 Each applied change is remembered (the `overlay_changes` table): the fields it set and their
 values. Once applied, a record holds the overlay's values rather than `was`, so a revised
@@ -231,7 +233,9 @@ changing a MudRev creature) is excused, and one another overlay has taken over s
 overlay's. Any other difference is a problem, and nothing is adopted.
 
 Records are read one at a time and only their keys kept, so a whole world's overlay is adopted
-in a few hundred megabytes.
+in a few hundred megabytes. `apply` and `check` work the same way: the world's records are read
+when needed and not kept, and each entry is let go once built, so planning MudRev's 78,809
+entries onto a stock world peaks near 350 MB.
 
 ## Re-imports
 

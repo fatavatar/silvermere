@@ -42,7 +42,7 @@ fn overlay_dir(name: &str, files: &[(&str, String)]) -> PathBuf {
 
 async fn apply(db: &Db, d: &Path) -> Result<overlay::Plan, OverlayError> {
     let o = overlay::load(d)?;
-    let plan = overlay::plan(db, &o).await?;
+    let plan = overlay::plan(db, o).await?;
     overlay::write(db, &plan).await?;
     Ok(plan)
 }
@@ -547,4 +547,75 @@ async fn a_world_that_holds_an_overlay_adopts_it() {
         "{again}"
     );
     t.close().await;
+}
+
+/// A shop change re-applied after play has sold from the shop: its stock on hand is play, not
+/// the overlay's, so the change is found already made.
+#[tokio::test]
+async fn a_shop_change_is_still_made_after_its_stock_sells() {
+    use silvermere_types::ids::ShopNo;
+    let t = TestDb::from_env().await.expect("test database");
+    let db = t.db();
+    stock_world(db).await;
+    let shop = db
+        .shops()
+        .all()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.stock[0].item.0 > 0)
+        .expect("a stock shop that sells something");
+    let slot = &shop.stock[0];
+    // a stock list replaces every slot, so each is listed: the first one changed
+    let stock = |first: Option<u16>, table: &str| {
+        shop.stock
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let (maxqty, qty) = match first {
+                    Some(n) if i == 0 => (n, n),
+                    _ => (s.maxqty, s.qty),
+                };
+                format!(
+                    "[[shop_change.{table}.stock]]\nitem = {}\nmaxqty = {maxqty}\nqty = {qty}\n\
+                     regennum = {}\nregenpct = {}\nregentime = {}\n\n",
+                    s.item.0, s.regennum, s.regenpct, s.regentime
+                )
+            })
+            .collect::<String>()
+    };
+    let toml = format!(
+        "[[shop_change]]\nnumber = {n}\n\n[shop_change.set]\nmarkup = {new_markup}\n\n{set}\
+         [shop_change.was]\nmarkup = {markup}\n\n{was}",
+        n = shop.number.0,
+        new_markup = shop.markup + 7,
+        markup = shop.markup,
+        set = stock(Some(slot.maxqty + 5), "set"),
+        was = stock(None, "was"),
+    );
+    let d = overlay_dir("shop-sold", &[("shops.toml", toml)]);
+    let plan = apply(db, &d).await.expect("apply");
+    assert_eq!(
+        actions(&plan),
+        vec![(format!("shop {}", shop.number.0), Action::Change)]
+    );
+    let changed = db.shops().get(shop.number).await.unwrap().unwrap();
+    assert_eq!(changed.markup, shop.markup + 7);
+    assert_eq!(changed.stock[0].maxqty, slot.maxqty + 5);
+
+    // play sells two
+    let mut stock = db
+        .shop_stock()
+        .get(ShopNo(shop.number.0))
+        .await
+        .unwrap()
+        .unwrap();
+    stock.qty[0] = stock.qty[0].saturating_sub(2);
+    db.shop_stock().put(&stock).await.unwrap();
+
+    let again = apply(db, &d).await.expect("reapply");
+    assert!(
+        again.records.iter().all(|p| p.action == Action::Unchanged),
+        "{again}"
+    );
 }
