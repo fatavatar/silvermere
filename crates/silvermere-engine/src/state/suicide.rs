@@ -22,7 +22,7 @@ pub fn on_line(world: &mut World, input: Input<'_>) -> Outcome {
 }
 
 /// `SuicideStep::Confirm`: the password typed for `SUICIDE`/`REROLL`. No password set and
-/// none typed, or a match (case not counting), carries the suicide out; anything else is
+/// none typed, or a match (its first 8 characters, case not counting), carries the suicide out; anything else is
 /// `Invalid password specified.` and back to the realm.
 pub fn on_confirm(world: &mut World, input: Input<'_>) -> Outcome {
     let id = input.id;
@@ -32,7 +32,7 @@ pub fn on_confirm(world: &mut World, input: Input<'_>) -> Outcome {
     };
     let pw = s.player().map(|p| p.suicpw.clone()).unwrap_or_default();
     let wrong = (w.is_empty() && !pw.is_empty())
-        || (!w.is_empty() && !w[0].eq_ignore_ascii_case(&pw))
+        || (!w.is_empty() && !suicide_pw::matches(w[0], &pw))
         || (!w.is_empty() && pw.is_empty());
     // typed characters are echoed again either way
     world.outbox.push(EngineOutput::SetEcho {
