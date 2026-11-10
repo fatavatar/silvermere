@@ -17,6 +17,16 @@ use crate::world::World;
 /// The longest suicide password.
 pub const MAX_LEN: usize = 8;
 
+/// Whether `typed` is the suicide password `pw`: the first [`MAX_LEN`] characters typed,
+/// case not counting, as the game stores and reads no more (`yourmother` is `yourmoth`).
+pub fn matches(typed: &str, pw: &str) -> bool {
+    let cut = typed
+        .char_indices()
+        .nth(MAX_LEN)
+        .map_or(typed.len(), |(i, _)| i);
+    typed[..cut].eq_ignore_ascii_case(pw)
+}
+
 /// `SET SUICIDE`: a player with a password gives the current one first
 /// (`SuicideStep::OldPw`), otherwise the new one is asked at once (`SuicideStep::NewPw`);
 /// both with `*` echoed, 8 characters at most. No prompt follows. T-028's `cmd_set` calls
@@ -79,7 +89,7 @@ pub fn on_old_pw(world: &mut World, input: Input<'_>) -> Outcome {
         s.output.push(Msg::SuicidePasswordNotChangedCaps);
         s.push_prompt();
         echo_on(world, id);
-    } else if w.is_empty() || w[0].eq_ignore_ascii_case(&pw) {
+    } else if w.is_empty() || matches(w[0], &pw) {
         s.state = SessionState::Suicide(SuicideStep::NewPw);
         s.output.push(Msg::SuicideEnterNewPasswordClr);
     } else {

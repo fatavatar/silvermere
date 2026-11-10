@@ -641,6 +641,28 @@ fn the_right_password_carries_it_out() {
     assert_deleted(&h, id);
 }
 
+// Only the first 8 characters typed count, as only 8 are stored: a password chosen as
+// `yourmother` is `yourmoth`, and typing the whole word matches it.
+#[test]
+fn a_longer_password_typed_matches_on_its_first_eight() {
+    let mut h = Harness::new();
+    let id = h.player("Ann");
+    h.plr_mut(id).suicpw = "yourmoth".into();
+    h.line(id, "suicide");
+    let out = h.line(id, "YourMother");
+    assert!(out.contains("you take your own life"), "{out}");
+    assert_eq!(h.plr(id).lives, 2);
+    // the eighth character still counts
+    h.line(id, "suicide");
+    let out = h.line(id, "yourmotx");
+    assert_eq!(out, format!("\nInvalid password specified.\n{PROMPT}"));
+    // SET SUICIDE's current password is read the same way
+    h.line(id, "set suicide");
+    assert_eq!(h.state(id), SessionState::Suicide(SuicideStep::OldPw));
+    h.line(id, "yourmother");
+    assert_eq!(h.state(id), SessionState::Suicide(SuicideStep::NewPw));
+}
+
 // commit_suicide: he no longer counts as having searched the room.
 #[test]
 fn suicide_clears_the_search_flags() {
