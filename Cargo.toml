@@ -24,7 +24,7 @@ edition = "2024"
 rust-version = "1.99.1"
 publish = false
 license = "MIT"
-repository = "https://github.com/jnfisher/silvermere"
+repository = "https://github.com/fatavatar/silvermere"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

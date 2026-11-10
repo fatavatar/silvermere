@@ -4,7 +4,7 @@ name: silvermere
 
 services:
   silvermere:
-    image: ghcr.io/jnfisher/silvermere:${SILVERMERE_VERSION:-latest}
+    image: ghcr.io/fatavatar/silvermere:${SILVERMERE_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -41,7 +41,7 @@ services:
   # own files: ... run --rm import import --from /data/legacy [--live]
   import:
     profiles: ["import"]
-    image: ghcr.io/jnfisher/silvermere:${SILVERMERE_VERSION:-latest}
+    image: ghcr.io/fatavatar/silvermere:${SILVERMERE_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile

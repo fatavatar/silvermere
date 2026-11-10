@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs a silvermere release on Linux (T-116):
-#   curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
 # Downloads the release archive for this machine, checks its SHA-256 against the release's
 # SHA256SUMS, unpacks the binary to ~/silvermere (or --prefix), downloads the stock MajorMUD
 # 1.11p distribution into data/cache and checks its SHA-256, runs the first start (the stock
@@ -17,7 +17,7 @@ usage() {
   cat <<'EOF'
 Installs a silvermere release on Linux.
 
-  curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
   curl -fsSL .../install.sh | sh -s -- [OPTIONS]
 
 Options:
@@ -34,7 +34,7 @@ the new one installed, the service restarted. data/ and silvermere.toml are kept
 EOF
 }
 
-releases=${SILVERMERE_RELEASES:-https://github.com/jnfisher/silvermere/releases}
+releases=${SILVERMERE_RELEASES:-https://github.com/fatavatar/silvermere/releases}
 # The stock MajorMUD 1.11p distribution (the MBBSEmu package): silvermere ships no game data, so
 # it is downloaded here and checked. The same pins as crates/silvermere-import/src/stock.rs (a
 # test keeps them equal).

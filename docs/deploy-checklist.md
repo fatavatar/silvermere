@@ -122,7 +122,7 @@ Paste: all of the output, and whether a Vultr firewall group is in use.
 Needs: A1, and A0 if a server was run by hand. No Rust toolchain, no build.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
 ```
 
 (For the system unit: `| sudo sh -s -- --system`.) It prints what it will do and asks; answer
