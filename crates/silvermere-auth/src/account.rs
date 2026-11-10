@@ -82,12 +82,16 @@ impl AccountFlags {
     /// characters typed, any case). Setting a password clears it. Not in [`Self::NAMED`]:
     /// granting it to another account would lock its player out.
     pub const BBS_PASSWORD: Self = Self(1 << 4);
+    /// The rlogin door may log in to this account without a password: the sysop has said
+    /// the BBS's user of this name is this account's player (`docs/auth.md`, rlogin).
+    pub const DOOR: Self = Self(db_accounts::FLAG_DOOR);
 
     /// The named flags, as the CLI and `docs/auth.md` spell them.
-    pub const NAMED: [(&'static str, Self); 3] = [
+    pub const NAMED: [(&'static str, Self); 4] = [
         ("no_gossip", Self::NO_GOSSIP),
         ("no_auction", Self::NO_AUCTION),
         ("no_loan", Self::NO_LOAN),
+        ("door", Self::DOOR),
     ];
 
     /// The flag named `name` (`no_gossip`, ...), ignoring case.
@@ -535,6 +539,27 @@ impl AccountStore for MemoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Every flag has a bit of its own, apart from the sex bit: realms imported here carry
+    // BBS_PASSWORD on bit 4, and a door flag on the same bit would let the rlogin door into
+    // every one of their accounts.
+    #[test]
+    fn each_flag_has_its_own_bit() {
+        let flags = [
+            AccountFlags::NO_GOSSIP,
+            AccountFlags::NO_AUCTION,
+            AccountFlags::NO_LOAN,
+            AccountFlags::BBS_PASSWORD,
+            AccountFlags::DOOR,
+        ];
+        let mut seen = AccountFlags::FEMALE;
+        for f in flags {
+            assert_eq!(f.bits().count_ones(), 1, "{:#x}", f.bits());
+            assert_eq!(seen & f.bits(), 0, "{:#x} is taken", f.bits());
+            seen |= f.bits();
+        }
+        assert_eq!(AccountFlags::BBS_PASSWORD.bits(), 1 << 4);
+    }
 
     #[test]
     fn whitespace_only_passwords_are_refused() {

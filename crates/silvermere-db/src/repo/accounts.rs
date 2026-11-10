@@ -7,6 +7,13 @@ use crate::pool::Db;
 use crate::repo::{Args, Conn, Get, delete_children, insert_many, insert_sql, select_sql};
 use crate::{DbError, Result};
 
+/// The `door` bit of `accounts.flags`: the rlogin door (a BBS that has already logged its
+/// caller in) may log in to this account on the BBS's word. Here rather than in
+/// silvermere-auth, which names the flags, because the import sets it too
+/// (`--door-users`). Bit 5 in this fork: bit 4 is `BBS_PASSWORD` (an imported Worldgroup
+/// password), which the realms imported here already carry.
+pub const FLAG_DOOR: u32 = 1 << 5;
+
 /// An account's columns, without its id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
