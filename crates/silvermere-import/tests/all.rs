@@ -26,5 +26,6 @@ mod post_update_equivalence;
 mod smoke;
 mod stock_pins;
 mod stock_vir;
+mod text_content;
 mod worldgroup;
 mod worldgroup_host;

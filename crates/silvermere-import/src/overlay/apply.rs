@@ -14,7 +14,7 @@ use std::fmt;
 use serde_json::{Map, Value, json};
 use silvermere_db::Db;
 use silvermere_db::overlay_records::{self, Owner};
-use silvermere_db::repo::StateWrite;
+use silvermere_db::repo::{DescFileRow, GameTextRow, HelpTopicRow, StateWrite};
 use silvermere_types::enums::{Ability, ExitType, MonsterAttackType, RoomType};
 use silvermere_types::ids::{
     ClassNo, ItemNo, MapId, MessageNo, MonsterNo, RaceNo, RoomId, RoomKey, ShopNo, SpellNo,
@@ -81,6 +81,12 @@ pub enum Record {
     Race(Box<Race>),
     /// An action.
     Action(Box<ActionRecord>),
+    /// A help topic (its position is kept, or found when it is written).
+    Help(HelpTopicRow),
+    /// A `FILE DESCRIPTION` file.
+    DescFile(DescFileRow),
+    /// A game text.
+    GameText(GameTextRow),
 }
 
 /// One record of a plan.
@@ -299,6 +305,24 @@ impl<'a> World<'a> {
                 .await
                 .map_err(db_err)?
                 .map(|r| to_value(&r)),
+            (Kind::Help, Key::Name(n)) => db
+                .help_topics()
+                .get(&n)
+                .await
+                .map_err(db_err)?
+                .map(|r| json!({"words": r.words, "text": r.text})),
+            (Kind::DescFile, Key::Name(n)) => db
+                .desc_files()
+                .get(&n)
+                .await
+                .map_err(db_err)?
+                .map(|r| json!({"text": r.text})),
+            (Kind::GameText, Key::Name(n)) => db
+                .game_texts()
+                .get(&n)
+                .await
+                .map_err(db_err)?
+                .map(|r| json!({"text": r.text})),
             _ => None,
         };
         self.known.insert((kind, key), v.is_some());
@@ -461,6 +485,28 @@ fn typed(kind: Kind, key: Key, v: Value) -> Result<Record, String> {
         Kind::Class => Record::Class(Box::new(serde_json::from_value(v).map_err(e)?)),
         Kind::Race => Record::Race(Box::new(serde_json::from_value(v).map_err(e)?)),
         Kind::Action => Record::Action(Box::new(serde_json::from_value(v).map_err(e)?)),
+        Kind::Help | Kind::DescFile | Kind::GameText => {
+            let Key::Name(name) = key else {
+                return Err(format!("a {kind} is named"));
+            };
+            let s = |f: &str| v[f].as_str().unwrap_or_default().to_owned();
+            match kind {
+                Kind::Help => Record::Help(HelpTopicRow {
+                    topic: name,
+                    position: 0,
+                    words: s("words"),
+                    text: s("text"),
+                }),
+                Kind::DescFile => Record::DescFile(DescFileRow {
+                    name,
+                    text: s("text"),
+                }),
+                _ => Record::GameText(GameTextRow {
+                    key: name,
+                    text: s("text"),
+                }),
+            }
+        }
         Kind::Text => {
             let Key::Number(n) = key else {
                 return Err("a text is numbered".into());
@@ -515,6 +561,8 @@ pub(super) fn blank(kind: Kind, key: &Key) -> Result<Value, String> {
         (Kind::Room, Key::Room(m, r)) => to_value(&build::blank_room(*m, *r)),
         (Kind::Action, Key::Name(name)) => to_value(&build::blank_action(name)),
         (Kind::Text, _) => json!({"link": 0, "parts": []}),
+        (Kind::Help, Key::Name(_)) => json!({"words": "", "text": ""}),
+        (Kind::DescFile | Kind::GameText, Key::Name(_)) => json!({"text": ""}),
         (Kind::Monster, k) => to_value(&build::blank_monster(
             n(k).and_then(|n| i32::try_from(n).ok()).ok_or_else(range)?,
         )),
@@ -914,6 +962,20 @@ fn ability_refs(out: &mut Vec<Ref>, abilities: &[AbilitySlot]) {
     }
 }
 
+/// A `FILE DESCRIPTION` description's file (its second line), which should exist.
+fn desc_file_ref(out: &mut Vec<Ref>, desc: &[String]) {
+    if let [first, file, ..] = desc
+        && first.trim_end().eq_ignore_ascii_case("FILE DESCRIPTION")
+        && !file.trim().is_empty()
+    {
+        out.push((
+            "desc[1]".into(),
+            Kind::DescFile,
+            Kind::DescFile.name_key(file),
+        ));
+    }
+}
+
 fn push_if(out: &mut Vec<Ref>, field: impl Into<String>, kind: Kind, n: i64) {
     if n > 0 {
         out.push((field.into(), kind, num(n)));
@@ -927,6 +989,7 @@ fn references(r: &Record) -> (Vec<Ref>, Vec<Ref>) {
     let mut soft = Vec::new();
     match r {
         Record::Room(room) => {
+            desc_file_ref(&mut soft, &room.desc);
             for (i, x) in room.exits.iter().enumerate() {
                 if x.target.0 != 0 {
                     // a map-change exit leads to the map in its first parameter
@@ -1020,6 +1083,7 @@ fn references(r: &Record) -> (Vec<Ref>, Vec<Ref>) {
             ability_refs(&mut hard, &m.abilities);
         }
         Record::Item(it) => {
+            desc_file_ref(&mut soft, &it.desc);
             push_if(&mut hard, "textnum", Kind::Text, it.textnum.0.into());
             push_if(&mut hard, "hitmsg", Kind::Message, it.hitmsg.0.into());
             push_if(&mut hard, "missmsg", Kind::Message, it.missmsg.0.into());
@@ -1039,7 +1103,7 @@ fn references(r: &Record) -> (Vec<Ref>, Vec<Ref>) {
             ability_refs(&mut hard, &c.abilities);
         }
         Record::Race(r) => ability_refs(&mut hard, &r.abilities),
-        Record::Action(_) => {}
+        Record::Action(_) | Record::Help(_) | Record::DescFile(_) | Record::GameText(_) => {}
         Record::Spell(s) => {
             push_if(&mut hard, "msgnum", Kind::Message, s.msgnum.0.into());
             ability_refs(&mut hard, &s.abilities);
@@ -1256,6 +1320,16 @@ pub async fn write(db: &Db, plan: &Plan) -> Result<(), OverlayError> {
     put_kind!(todo(), Record::Class(r) => (**r).clone(), b => db.classes().put_many(&b));
     put_kind!(todo(), Record::Race(r) => (**r).clone(), b => db.races().put_many(&b));
     put_kind!(todo(), Record::Action(r) => (**r).clone(), b => db.actions().put_many(&b));
+    put_kind!(todo(), Record::DescFile(r) => r.clone(), b => db.desc_files().put_many(&b));
+    put_kind!(todo(), Record::GameText(r) => r.clone(), b => db.game_texts().put_many(&b));
+    write_help(
+        db,
+        todo().filter_map(|p| match &p.record {
+            Record::Help(r) => Some(r),
+            _ => None,
+        }),
+    )
+    .await?;
     for p in todo() {
         let Record::Text(parts) = &p.record else {
             continue;
@@ -1287,6 +1361,55 @@ pub async fn write(db: &Db, plan: &Plan) -> Result<(), OverlayError> {
         .await
         .map_err(db_err)?;
     Ok(())
+}
+
+/// Writes help topics: a stored topic keeps its place in the list, a new one goes after the
+/// others and before the `Help ?` end marker (the last), so the realm's topics are still tried
+/// first.
+async fn write_help<'a>(
+    db: &Db,
+    topics: impl Iterator<Item = &'a HelpTopicRow>,
+) -> Result<(), OverlayError> {
+    let topics: Vec<&HelpTopicRow> = topics.collect();
+    if topics.is_empty() {
+        return Ok(());
+    }
+    let stored = db.help_topics().all().await.map_err(db_err)?;
+    let at: HashMap<&str, i64> = stored
+        .iter()
+        .map(|r| (r.topic.as_str(), r.position))
+        .collect();
+    let end = stored.iter().map(|r| r.position).max();
+    let mut last = stored
+        .iter()
+        .map(|r| r.position)
+        .filter(|p| Some(*p) != end)
+        .max()
+        .unwrap_or(0);
+    let mut rows = Vec::with_capacity(topics.len());
+    for t in topics {
+        let position = match at.get(t.topic.as_str()) {
+            Some(&p) => p,
+            None => {
+                last += 1;
+                if end.is_some_and(|e| last >= e) {
+                    return Err(OverlayError::Invalid(vec![format!(
+                        "help {}: no room before the end marker for another topic",
+                        t.topic
+                    )]));
+                }
+                if end.is_none() {
+                    last = last.max(crate::text_content::HELP_POSITION_STEP);
+                }
+                last
+            }
+        };
+        rows.push(HelpTopicRow {
+            position,
+            ..t.clone()
+        });
+    }
+    db.help_topics().put_many(&rows).await.map_err(db_err)
 }
 
 /// What adopting an overlay found ([`adopt_dir`]).

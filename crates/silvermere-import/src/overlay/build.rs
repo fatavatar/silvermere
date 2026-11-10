@@ -417,6 +417,29 @@ pub fn merge(kind: Kind, base: &mut Value, over: &Map<String, Value>) -> Result<
     let Value::Object(b) = base else {
         return Err("the record is not a table".into());
     };
+    if let Some(fields) = kind.text_fields() {
+        // a few strings, each with `{ansi:..}` markup
+        for (field, value) in over {
+            if !fields.contains(&field.as_str()) {
+                return Err(format!(
+                    "`{field}`: a {kind} holds {}",
+                    fields
+                        .iter()
+                        .map(|f| format!("`{f}`"))
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ));
+            }
+            let Value::String(s) = value else {
+                return Err(format!("`{field}` must be a string"));
+            };
+            b.insert(
+                field.clone(),
+                Value::String(markup(s).map_err(|e| format!("`{field}`: {e}"))?),
+            );
+        }
+        return Ok(());
+    }
     for (field, value) in over {
         let Some(slot) = b.get_mut(field) else {
             return Err(format!("`{field}`: no such field"));

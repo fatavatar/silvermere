@@ -371,6 +371,9 @@ pub enum ImportError {
     /// Unpacking the runtime text files failed.
     #[error("assets: {0}")]
     Assets(#[from] crate::assets::AssetError),
+    /// The help or message files of the source do not parse.
+    #[error("text content: {0}")]
+    TextContent(String),
 }
 
 /// A decoded record with where it came from.
@@ -519,6 +522,9 @@ pub struct Report {
     pub patches: Option<PatchReport>,
     /// The runtime text files unpacked, when `assets` was given.
     pub assets: Vec<AssetCount>,
+    /// The help topics, description files and game texts read from the source and written
+    /// (`help_topics`, `desc_files`, `game_texts`), when the source has any.
+    pub text_content: Option<(usize, usize, usize)>,
     /// Every record read and not written that is not a duplicate or a skip by request:
     /// one line each.
     pub uncarried: Vec<Note>,
@@ -559,6 +565,14 @@ impl fmt::Display for Report {
         }
         for a in &self.assets {
             writeln!(f, "{}", a.line(self.dry_run))?;
+        }
+        if let Some((help, files, texts)) = self.text_content {
+            let verb = if self.dry_run { "to write" } else { "written" };
+            writeln!(
+                f,
+                "text content: {help} help topics, {files} description files, {texts} game \
+                 texts {verb}"
+            )?;
         }
         for n in &self.uncarried {
             writeln!(f, "{n}")?;
@@ -932,6 +946,22 @@ impl<'a> Importer<'a> {
         let patches = self.patch(&mut content)?;
         let mut report = self.run_content(&content, start).await?;
         report.patches = patches;
+        let text = crate::text_content::from_files(&crate::assets::source_files(&self.opts.from)?)
+            .map_err(ImportError::TextContent)?;
+        if !text.is_empty() {
+            if !self.opts.dry_run {
+                let db = self.db.expect("a database unless --dry-run");
+                text.write(db).await.map_err(|source| ImportError::Db {
+                    table: "help_topics, desc_files, game_texts",
+                    source,
+                })?;
+            }
+            report.text_content = Some((
+                text.help.len(),
+                text.desc_files.len(),
+                text.game_texts.len(),
+            ));
+        }
         if let Some(dest) = &self.opts.assets {
             report.assets = crate::assets::unpack_assets_checked(
                 &self.opts.from,
@@ -1052,6 +1082,7 @@ impl<'a> Importer<'a> {
             write_time: start.elapsed(),
             patches: None,
             assets: Vec::new(),
+            text_content: None,
             uncarried,
             accounts_without_password,
             door_accounts,

@@ -40,6 +40,8 @@ struct Table {
 #[derive(Debug, Default)]
 struct Schema {
     tables: Vec<Table>,
+    /// Tables a `DROP TABLE` removes: an earlier migration's, made again by a later one.
+    dropped: Vec<String>,
 }
 
 const TABLE_CONSTRAINT_WORDS: &[&str] = &["PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "CONSTRAINT"];
@@ -110,6 +112,13 @@ fn parse(sql: &str, file: &str) -> Result<Schema, String> {
                 references,
                 comment,
             });
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("DROP TABLE ") {
+            let name = rest.trim().trim_end_matches(';').trim();
+            schema.tables.retain(|t| t.name != name);
+            schema.dropped.push(name.to_string());
+            pending.clear();
             continue;
         }
         if let Some(rest) = line.strip_prefix("CREATE TABLE ") {
@@ -343,6 +352,7 @@ fn load(dir: &Path, root: &Path) -> Result<(Schema, Vec<String>), String> {
             .to_string();
         let sql = fs::read_to_string(&file).map_err(|e| format!("{rel}: {e}"))?;
         let schema = parse(&sql, &rel)?;
+        all.tables.retain(|t| !schema.dropped.contains(&t.name));
         all.tables.extend(schema.tables);
         names.push(rel);
     }

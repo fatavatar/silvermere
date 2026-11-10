@@ -112,6 +112,24 @@ async fn all(db: &Db, kind: Kind) -> Result<BTreeMap<Key, Value>, OverlayError> 
                 put(Key::Name(r.name.to_ascii_lowercase()), to_value(&r));
             }
         }
+        Kind::Help => {
+            for r in db.help_topics().all().await? {
+                put(
+                    kind.name_key(&r.topic),
+                    json!({"words": r.words, "text": r.text}),
+                );
+            }
+        }
+        Kind::DescFile => {
+            for r in db.desc_files().all().await? {
+                put(kind.name_key(&r.name), json!({"text": r.text}));
+            }
+        }
+        Kind::GameText => {
+            for r in db.game_texts().all().await? {
+                put(kind.name_key(&r.key), json!({"text": r.text}));
+            }
+        }
         Kind::Text => {
             let mut blocks: BTreeMap<i32, (i32, Vec<String>)> = BTreeMap::new();
             for p in db.text_blocks().all().await? {
@@ -127,7 +145,7 @@ async fn all(db: &Db, kind: Kind) -> Result<BTreeMap<Key, Value>, OverlayError> 
 }
 
 /// The key fields of an entry.
-fn key_fields(key: &Key) -> Map<String, Value> {
+fn key_fields(kind: Kind, key: &Key) -> Map<String, Value> {
     let mut m = Map::new();
     match key {
         Key::Room(map, room) => {
@@ -138,7 +156,23 @@ fn key_fields(key: &Key) -> Map<String, Value> {
             m.insert("number".into(), json!(n));
         }
         // an action's verb is its `name` field, written with the rest
-        Key::Name(_) => {}
+        Key::Name(_) if kind == Kind::Action => {}
+        Key::Name(n) => {
+            m.insert(kind.name_field().unwrap_or("name").into(), json!(n));
+        }
+    }
+    m
+}
+
+/// The string values of a text kind's fields with their braces doubled, so the loader's
+/// markup leaves them as they are.
+fn escaped(kind: Kind, mut m: Map<String, Value>) -> Map<String, Value> {
+    if kind.text_fields().is_some() {
+        for v in m.values_mut() {
+            if let Value::String(s) = v {
+                *s = s.replace('{', "{{").replace('}', "}}");
+            }
+        }
     }
     m
 }
@@ -282,7 +316,7 @@ pub async fn export(
                 Key::Room(map, _) => format!("rooms-{map:03}.toml"),
                 _ => format!("{}.toml", plural(kind)),
             };
-            let mut entry = key_fields(key);
+            let mut entry = key_fields(kind, key);
             let entry_name = match old.get(key) {
                 None => {
                     *report.created.entry(kind).or_default() += 1;
@@ -292,7 +326,7 @@ pub async fn export(
                     } else {
                         let start = blank(kind, key).map_err(|e| OverlayError::Invalid(vec![e]))?;
                         let (set, _) = differing(kind, &design(kind, &start), v);
-                        entry.extend(set);
+                        entry.extend(escaped(kind, set));
                         if kind == Kind::Action {
                             entry.insert("name".into(), v["name"].clone());
                         }
@@ -316,8 +350,8 @@ pub async fn export(
                         if kind == Kind::Action {
                             entry.insert("name".into(), v["name"].clone());
                         }
-                        entry.insert("set".into(), Value::Object(set));
-                        entry.insert("was".into(), Value::Object(was));
+                        entry.insert("set".into(), Value::Object(escaped(kind, set)));
+                        entry.insert("was".into(), Value::Object(escaped(kind, was)));
                         format!("{}_change", kind.name())
                     }
                 }
@@ -382,6 +416,7 @@ pub async fn export(
 fn plural(kind: Kind) -> String {
     match kind {
         Kind::Class => "classes".into(),
+        Kind::Help => "help".into(),
         other => format!("{}s", other.name()),
     }
 }

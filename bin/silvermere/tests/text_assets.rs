@@ -131,3 +131,71 @@ fn a_skipped_dll_text_comes_from_the_cached_package() {
     silvermere::stock::complete_text_assets(&data, false);
     assert_eq!(missing_text_assets(&assets).unwrap(), ["DLLTEXT.TXT"]);
 }
+
+/// A database made before help, description files and game texts were content has none: the
+/// first start fills them from the assets the import wrote, and the text package takes the
+/// database's help and texts over the files' own.
+#[tokio::test]
+async fn an_older_database_fills_its_text_content_from_the_assets_once() {
+    use silvermere_db::TestDb;
+    use silvermere_db::repo::{GameTextRow, HelpTopicRow};
+
+    let t = TestDb::from_env().await.expect("test database");
+    let db = t.db();
+    let data = tmp("text-content-fill");
+    let assets = data.join("assets");
+    std::fs::create_dir_all(&assets).unwrap();
+    for entry in std::fs::read_dir(silvermere_testkit::stock::assets_dir()).unwrap() {
+        let entry = entry.unwrap();
+        std::fs::copy(entry.path(), assets.join(entry.file_name())).unwrap();
+    }
+    // a realm's gang house the stock files do not have
+    std::fs::write(assets.join("wcc99915.hse"), b"A gang house\x87s hall.\r\n").unwrap();
+
+    let text = silvermere::realm_text::load(db, &data).await.unwrap();
+    assert_eq!(text.help.len(), 132);
+    assert!(text.desc_files.iter().any(|f| f.name == "WCC99915.HSE"));
+    assert_eq!(
+        db.desc_files()
+            .get("wcc99915.HSE")
+            .await
+            .unwrap()
+            .unwrap()
+            .text,
+        "A gang house\u{e7}s hall.\r\n"
+    );
+
+    // the database is the realm's from now on: an edit there wins over the files
+    db.help_topics()
+        .put_many(&[HelpTopicRow {
+            text: "The realm's own overview.\n".into(),
+            ..text.help[0].clone()
+        }])
+        .await
+        .unwrap();
+    db.game_texts()
+        .put_many(&[GameTextRow {
+            key: "USRLOGIN".into(),
+            text: "Welcome to the realm, v%s!\n".into(),
+        }])
+        .await
+        .unwrap();
+    std::fs::remove_file(assets.join("wcc99915.hse")).unwrap();
+    let text = silvermere::realm_text::load(db, &data).await.unwrap();
+    // not filled again: the file is gone from the assets, not from the database
+    assert!(text.desc_files.iter().any(|f| f.name == "WCC99915.HSE"));
+    let package = PackageText::load_with(&assets, &silvermere::realm_text::realm_text(&text))
+        .expect("the text loads");
+    assert_eq!(package.help().overview, "The realm's own overview.\r");
+    assert_eq!(package.help().topics.len(), 131);
+    let login = package.wccmmud().messages["usrlogin"].text.clone();
+    assert!(login.contains("Welcome to the realm"), "{login}");
+
+    let mut assets_now = silvermere_engine::display::Assets::default();
+    silvermere::realm_text::add_desc_files(&mut assets_now, &text);
+    assert_eq!(
+        assets_now.get("wcc99915.hse"),
+        Some(&b"A gang house\x87s hall.\r\n"[..])
+    );
+    t.close().await;
+}

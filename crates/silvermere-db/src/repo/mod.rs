@@ -27,6 +27,7 @@ pub mod rooms;
 pub mod shops;
 pub mod spells;
 pub mod text_blocks;
+pub mod text_content;
 
 pub use accounts::{Account, AccountRow, Accounts};
 pub use active_monsters::ActiveMonsters;
@@ -45,6 +46,7 @@ pub use rooms::{RoomState, RoomStates, Rooms};
 pub use shops::{ShopStock, ShopStocks, Shops};
 pub use spells::Spells;
 pub use text_blocks::{Actions, TextBlockText, TextBlocks};
+pub use text_content::{DescFileRow, DescFiles, GameTextRow, GameTexts, HelpTopicRow, HelpTopics};
 
 use sqlx::AnyConnection;
 use sqlx::any::{Any, AnyArguments, AnyRow};

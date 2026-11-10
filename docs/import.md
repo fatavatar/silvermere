@@ -164,6 +164,23 @@ Names match in any case, as on DOS. A file already in the assets directory is ke
 "kept") unless `--overwrite-assets`, which writes over it under its existing name. A dry run
 counts and writes nothing. A damaged archive fails the import, naming it.
 
+### Help, description files and game texts
+
+Three parts of those files are the realm's content, kept in the database where overlays can
+add and change them ([overlays.md](overlays.md#help-description-files-and-game-texts)): the
+help topics of `WCCMMHLP.MSG` (`help_topics`), the `FILE DESCRIPTION` files, every `.HSE`,
+`.EMB`, `.BAN`, `.STA` and `.STO` (`desc_files`), and the twelve text blocks of `WCCMMUD.MSG`
+and `WCCTEXT.MSG` the server shows (`game_texts`). The import reads them from its source as
+the asset step chooses its files (archive members, then the source's own copies), writes them
+whatever the assets directory already holds, and counts them on a line of its own
+(`text content: 132 help topics, 47 description files, 12 game texts written`). A source
+without the message files (the `.VIR` or `.DAT` files alone) writes no help or texts.
+
+The server reads the three tables at start, over the files in `<data_dir>/assets/`. A database
+that has none of them (one imported before they were content) is filled once from that
+directory on its first start, so a realm keeps its own help and gang houses without importing
+again; from then on the database is the realm's copy, and editing the files changes nothing.
+
 A data directory imported by 0.1.3 or earlier has none of the text files. `serve`, `setup` and
 the first start copy what is missing from the cached package in `<data_dir>/cache/`
 (downloading it first if it is not there, as the first start does) and log one line; no

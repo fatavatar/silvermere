@@ -176,6 +176,53 @@ pub fn unpack_assets_checked(
     dry_run: bool,
     stock_package: bool,
 ) -> Result<Vec<AssetCount>, AssetError> {
+    let (chosen, mut counts) = chosen_assets(from, stock_package, true)?;
+    let existing = files_by_name(dest)?;
+    if !dry_run
+        && chosen
+            .keys()
+            .any(|n| overwrite || !existing.contains_key(n))
+    {
+        std::fs::create_dir_all(dest).map_err(io(dest))?;
+    }
+    for (name, (slot, bytes)) in chosen {
+        let c = &mut counts[slot];
+        c.files += 1;
+        // an existing file keeps its own spelling, so no two names differ only in case
+        let target = match existing.get(&name) {
+            Some(_) if !overwrite => {
+                c.kept += 1;
+                continue;
+            }
+            Some(path) => path.clone(),
+            None => dest.join(&name),
+        };
+        if !dry_run {
+            std::fs::write(&target, bytes).map_err(io(&target))?;
+        }
+        c.written += 1;
+    }
+    Ok(counts)
+}
+
+/// The asset files `from` holds, by upper-case name, as [`unpack_assets`] would write them
+/// (archive members, then loose files, then the message files), without the DLL's screens:
+/// what the import reads the realm's text content from ([`crate::text_content`]).
+pub fn source_files(from: &Path) -> Result<BTreeMap<String, Vec<u8>>, AssetError> {
+    let (chosen, _) = chosen_assets(from, false, false)?;
+    Ok(chosen.into_iter().map(|(n, (_, b))| (n, b)).collect())
+}
+
+/// Upper-case name to (count slot, bytes).
+type Chosen = BTreeMap<String, (usize, Vec<u8>)>;
+
+/// The files to write and one count per source: upper-case name to (count slot, bytes), a
+/// later source replacing an earlier one; the DLL's screens only `with_dll`.
+fn chosen_assets(
+    from: &Path,
+    stock_package: bool,
+    with_dll: bool,
+) -> Result<(Chosen, Vec<AssetCount>), AssetError> {
     let sources = files_by_name(from)?;
     // upper-case name -> (count slot, bytes); a later source replaces an earlier one
     let mut chosen: BTreeMap<String, (usize, Vec<u8>)> = BTreeMap::new();
@@ -221,7 +268,7 @@ pub fn unpack_assets_checked(
             chosen.insert(name.to_string(), (loose, bytes));
         }
     }
-    if let Some(path) = sources.get(dll_text::DLL_NAME) {
+    if let Some(path) = sources.get(dll_text::DLL_NAME).filter(|_| with_dll) {
         let dll = std::fs::read(path).map_err(io(path))?;
         counts.push(AssetCount {
             source: dll_text::DLL_NAME.to_string(),
@@ -244,33 +291,7 @@ pub fn unpack_assets_checked(
             }
         }
     }
-
-    let existing = files_by_name(dest)?;
-    if !dry_run
-        && chosen
-            .keys()
-            .any(|n| overwrite || !existing.contains_key(n))
-    {
-        std::fs::create_dir_all(dest).map_err(io(dest))?;
-    }
-    for (name, (slot, bytes)) in chosen {
-        let c = &mut counts[slot];
-        c.files += 1;
-        // an existing file keeps its own spelling, so no two names differ only in case
-        let target = match existing.get(&name) {
-            Some(_) if !overwrite => {
-                c.kept += 1;
-                continue;
-            }
-            Some(path) => path.clone(),
-            None => dest.join(&name),
-        };
-        if !dry_run {
-            std::fs::write(&target, bytes).map_err(io(&target))?;
-        }
-        c.written += 1;
-    }
-    Ok(counts)
+    Ok((chosen, counts))
 }
 
 /// The files of [`TEXT_ASSETS`] that `dest` lacks (names in any case).

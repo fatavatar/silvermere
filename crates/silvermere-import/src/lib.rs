@@ -21,6 +21,7 @@ pub mod json;
 pub mod overlay;
 pub mod patch;
 pub mod stock;
+pub mod text_content;
 pub mod zip;
 
 pub use assets::{AssetCount, unpack_assets};

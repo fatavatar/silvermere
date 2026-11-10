@@ -51,11 +51,17 @@ pub enum Kind {
     Race,
     /// An action, a social verb (`name`).
     Action,
+    /// A help topic (`topic`, its message name: `HL1T24`, or an overlay's own).
+    Help,
+    /// A `FILE DESCRIPTION` text file (`name`: `WCC85015.HSE`).
+    DescFile,
+    /// One of the game texts the message files set (`key`: `USRLOGIN`); changed only.
+    GameText,
 }
 
 impl Kind {
     /// Every kind, in the order a plan is reported.
-    pub const ALL: [Kind; 10] = [
+    pub const ALL: [Kind; 13] = [
         Kind::Room,
         Kind::Monster,
         Kind::Item,
@@ -66,6 +72,9 @@ impl Kind {
         Kind::Class,
         Kind::Race,
         Kind::Action,
+        Kind::Help,
+        Kind::DescFile,
+        Kind::GameText,
     ];
 
     /// The entry name (`room`); a change is `room_change`.
@@ -81,6 +90,41 @@ impl Kind {
             Kind::Class => "class",
             Kind::Race => "race",
             Kind::Action => "action",
+            Kind::Help => "help",
+            Kind::DescFile => "desc_file",
+            Kind::GameText => "game_text",
+        }
+    }
+
+    /// The field that names a record of a kind keyed by name (`name` for an action, which
+    /// keeps it as a field too), `None` for the numbered kinds and rooms.
+    pub fn name_field(self) -> Option<&'static str> {
+        match self {
+            Kind::Action | Kind::DescFile => Some("name"),
+            Kind::Help => Some("topic"),
+            Kind::GameText => Some("key"),
+            _ => None,
+        }
+    }
+
+    /// A name key as the kind stores it: an action's verb in lower case, the others' names in
+    /// upper case (file and message names).
+    pub fn name_key(self, name: &str) -> Key {
+        let name = name.trim();
+        Key::Name(if self == Kind::Action {
+            name.to_ascii_lowercase()
+        } else {
+            name.to_ascii_uppercase()
+        })
+    }
+
+    /// The kinds whose record is a few strings (help topics, description files, game texts):
+    /// their fields, which take `{ansi:..}` markup.
+    pub fn text_fields(self) -> Option<&'static [&'static str]> {
+        match self {
+            Kind::Help => Some(&["words", "text"]),
+            Kind::DescFile | Kind::GameText => Some(&["text"]),
+            _ => None,
         }
     }
 
@@ -125,7 +169,7 @@ impl Key {
                 Some(Key::Room(m.trim().parse().ok()?, r.trim().parse().ok()?))
             }
             (Kind::Room, None) => None,
-            (Kind::Action, _) => Some(Key::Name(s.trim().to_ascii_lowercase())),
+            (k, _) if k.name_field().is_some() => Some(k.name_key(s)),
             (_, Some(_)) => None,
             (_, None) => s.trim().parse().ok().map(Key::Number),
         }
@@ -607,6 +651,8 @@ fn key_value(kind: Kind, v: Value) -> Result<Key, String> {
         (Kind::Room, _) => Err("a room is `[map, room]`".into()),
         (Kind::Action, Value::String(n)) => Ok(Key::Name(n.to_ascii_lowercase())),
         (Kind::Action, _) => Err("an action is its verb".into()),
+        (k, Value::String(n)) if k.name_field().is_some() => Ok(k.name_key(&n)),
+        (k, _) if k.name_field().is_some() => Err(format!("a {k} is named by a string")),
         (_, Value::Number(n)) => n
             .as_i64()
             .map(Key::Number)
@@ -623,6 +669,13 @@ fn take_key(kind: Kind, map: &mut Map<String, Value>) -> Result<Key, String> {
             Some(Value::String(n)) => Ok(Key::Name(n.to_ascii_lowercase())),
             _ => Err("needs `name`, the verb".into()),
         },
+        k if k.name_field().is_some() => {
+            let field = k.name_field().expect("a named kind");
+            match map.remove(field) {
+                Some(Value::String(n)) if !n.trim().is_empty() => Ok(k.name_key(&n)),
+                _ => Err(format!("needs `{field}`, a string")),
+            }
+        }
         _ => Ok(Key::Number(i64::from(take_u32(map, "number")?))),
     }
 }
@@ -635,6 +688,21 @@ fn entry(
     origin: Origin,
 ) -> Result<Entry, String> {
     let key = take_key(kind, &mut map)?;
+    if kind == Kind::GameText {
+        if !change {
+            return Err("the game texts always exist: change one with [[game_text_change]]".into());
+        }
+        let Key::Name(k) = &key else {
+            unreachable!("a named kind")
+        };
+        if !crate::text_content::game_text_keys().any(|g| g == k) {
+            let all: Vec<&str> = crate::text_content::game_text_keys().collect();
+            return Err(format!(
+                "`{k}` is not a game text; they are {}",
+                all.join(", ")
+            ));
+        }
+    }
     if change && kind == Kind::Action {
         // an action's verb is its key; a change names it and sets the rest
         map.remove("name");

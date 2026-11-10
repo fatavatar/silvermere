@@ -63,7 +63,8 @@ pub struct AdoptArgs {
 /// `overlay show` arguments.
 #[derive(Debug, Clone, Args)]
 pub struct ShowArgs {
-    /// room, monster, item, spell, shop, message or text.
+    /// room, monster, item, spell, shop, message, text, class, race, action, help, desc_file
+    /// or game_text.
     pub kind: String,
     /// The key: `map/room` for a room, else the number.
     pub key: String,
@@ -156,8 +157,9 @@ fn export(cfg: &Config, a: &ExportArgs) -> anyhow::Result<ExitCode> {
 fn show(cfg: &Config, a: &ShowArgs) -> anyhow::Result<ExitCode> {
     let kind = overlay::Kind::from_name(&a.kind).with_context(|| {
         format!(
-            "{}: not a kind (room, monster, item, spell, shop, message, text)",
-            a.kind
+            "{}: not a kind ({})",
+            a.kind,
+            overlay::Kind::ALL.map(|k| k.name()).join(", ")
         )
     })?;
     let key = overlay::Key::parse(kind, &a.key)

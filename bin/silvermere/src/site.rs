@@ -55,7 +55,7 @@ pub async fn build(cfg: &Config, db: &Db) -> anyhow::Result<Report> {
         .await?
         .map(|r| room_view(&r));
     let overlays = overlays(cfg, db, &mut warnings).await?;
-    let help_topics = help_topics(cfg, &mut warnings);
+    let help_topics = help_topics(cfg, db, &mut warnings).await?;
 
     let dir = site_dir(cfg);
     let staging = cfg.data_dir.join(".site.new");
@@ -128,21 +128,29 @@ pub async fn build(cfg: &Config, db: &Db) -> anyhow::Result<Report> {
     })
 }
 
-/// The game's help topics (`WCCMMHLP.MSG` in the assets), for the class and race pages.
-fn help_topics(cfg: &Config, warnings: &mut Vec<String>) -> Vec<(String, String)> {
+/// The game's help topics (the database's, over the files in the assets), for the class
+/// and race pages.
+async fn help_topics(
+    cfg: &Config,
+    db: &Db,
+    warnings: &mut Vec<String>,
+) -> anyhow::Result<Vec<(String, String)>> {
     let assets = cfg.data_dir.join("assets");
-    match silvermere_text::package::PackageText::load(&assets) {
-        Ok(text) => text
-            .help()
-            .topics
-            .iter()
-            .map(|t| (t.words.clone(), t.text.clone()))
-            .collect(),
-        Err(e) => {
-            warnings.push(format!("the game's help text was not read ({e}): classes and races are described from their data alone"));
-            Vec::new()
-        }
-    }
+    let realm = crate::realm_text::realm_text(&crate::realm_text::load(db, &cfg.data_dir).await?);
+    Ok(
+        match silvermere_text::package::PackageText::load_with(&assets, &realm) {
+            Ok(text) => text
+                .help()
+                .topics
+                .iter()
+                .map(|t| (t.words.clone(), t.text.clone()))
+                .collect(),
+            Err(e) => {
+                warnings.push(format!("the game's help text was not read ({e}): classes and races are described from their data alone"));
+                Vec::new()
+            }
+        },
+    )
 }
 
 /// A room as the game shows it: its name, description and the exits a player can see.

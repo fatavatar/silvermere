@@ -103,7 +103,9 @@ Each content file holds entries by kind:
 | `[[class]]`, `[[race]]` | `number` | a blank one, or `from` |
 | `[[action]]` | `name` (the verb, any case) | no texts, or `from = "verb"` |
 | `[[text]]` | `number` | nothing: `text` (or `parts`) and `link` |
-| `[[room_change]]` .. `[[action_change]]` | as above | the record that exists |
+| `[[help]]` | `topic` (any case) | nothing: `words` and `text` |
+| `[[desc_file]]` | `name` (the file name, any case) | nothing: `text` |
+| `[[room_change]]` .. `[[help_change]]`, `[[desc_file_change]]`, `[[game_text_change]]` | as above (`key` for a game text) | the record that exists |
 
 A blank record has every field zero or empty, so a new record from scratch must set what it
 needs; a template (`from`) is the quicker start for "a variant of that one".
@@ -138,6 +140,39 @@ that kind in that file: a whole area's level range and monster group in one plac
 - **Text** may hold colour markup: `{ansi:1;32}` is the escape sequence `ESC[1;32m`, and
   `{{` and `}}` are literal braces. `text` longer than one stored part (1,999 characters) is
   split into parts at line ends; `parts = ["...", "..."]` gives the parts exactly instead.
+
+## Help, description files and game texts
+
+Three kinds are text the realm's files held rather than records
+([import.md](import.md#help-description-files-and-game-texts)):
+
+- **Help topics** (`[[help]]`, `[[help_change]]`, keyed by `topic`): `words` is what HELP
+  matches a player's topic against, `text` what it prints, `%c` standing for the say and yell
+  characters as in `WCCMMHLP.MSG`. The stock topics are named as the file names them: `HL1B0`
+  is the overview `HELP` alone prints (its `words` are empty), `HL1T1` .. the topics. A new
+  topic takes any name; it goes after the topics already there and before the `Help ?` end
+  marker, so HELP tries the realm's own first.
+- **Description files** (`[[desc_file]]`, `[[desc_file_change]]`, keyed by `name`): the text
+  a room or item whose description is `FILE DESCRIPTION` shows (its second line names the
+  file, its third the line prefix, as in a gang house's `WCC85015.HSE`). Line ends are kept as
+  written; a DOS file's are `\r\n`.
+- **Game texts** (`[[game_text_change]]` only, keyed by `key`): the twelve text blocks of
+  `WCCMMUD.MSG` and `WCCTEXT.MSG` the server shows, `USRLOGIN` (the line at login),
+  `USRFOLED` (the banner on entering) and the rest. They always exist, so an overlay changes
+  them and never creates one; another key is an error naming the twelve.
+
+Their `text` (and a topic's `words`) take the same `{ansi:..}` markup as a text block's.
+
+```toml
+[[help]]
+topic = "ashfall"
+words = "Ashfall Valley"
+text = "{ansi:1;33}Ashfall Valley{ansi:0}: a sunken valley beneath the Volcano.\n"
+
+[[game_text_change]]
+key = "USRLOGIN"
+set = { text = "Fantasy awaits you in the Realm of Legends, v%s!\n" }
+```
 
 ## Changes
 
@@ -183,7 +218,8 @@ in the world or in the overlay: exits (a `MapChange` exit on the map in `par1`),
 `specmon`, `genmonster`, `cmdtext`, shop and placed items; a monster's weapon, items, spells,
 attack spells and messages, death and create spells and texts; an item's text, messages and
 negated spells; a spell's message; a shop's stock; and the spells, texts, monsters and
-messages abilities such as `TextBlock`, `EndCast`, `Summon` and `DescMsg` name. Numbers a
+messages abilities such as `TextBlock`, `EndCast`, `Summon` and `DescMsg` name. A room or item
+whose description names a `FILE DESCRIPTION` file that exists nowhere is a warning. Numbers a
 record kept unchanged from its template or from the realm are not checked: they are the
 realm's own.
 
