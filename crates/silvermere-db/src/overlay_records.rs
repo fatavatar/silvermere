@@ -97,6 +97,90 @@ pub async fn applied(db: &Db, name: &str) -> Result<bool> {
     Ok(row.is_some())
 }
 
+/// Records `name` as the owner of `owned` (kind, key) and as having changed `changed` (kind,
+/// key, fields as JSON), in one transaction: an overlay adopted at once or not at all.
+pub async fn record_many(
+    db: &Db,
+    name: &str,
+    owned: &[(String, String)],
+    changed: &[(String, String, String)],
+) -> Result<()> {
+    let now = jiff::Timestamp::now().to_string();
+    let mut tx = db.pool().begin().await?;
+    for (kind, key) in owned {
+        sqlx::query(
+            "INSERT INTO overlay_records (kind, rec_key, overlay, applied_at) VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (kind, rec_key) DO UPDATE SET overlay = excluded.overlay, \
+             applied_at = excluded.applied_at",
+        )
+        .bind(kind)
+        .bind(key)
+        .bind(name)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for (kind, key, fields) in changed {
+        sqlx::query(
+            "INSERT INTO overlay_changes (kind, rec_key, overlay, fields, applied_at) \
+             VALUES ($1, $2, $3, $4, $5) \
+             ON CONFLICT (kind, rec_key, overlay) DO UPDATE SET fields = excluded.fields, \
+             applied_at = excluded.applied_at",
+        )
+        .bind(kind)
+        .bind(key)
+        .bind(name)
+        .bind(fields)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Whether an overlay other than `name` owns or has changed this record.
+pub async fn touched_by_others(db: &Db, kind: &str, key: &str, name: &str) -> Result<bool> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT 1 FROM overlay_records WHERE kind = $1 AND rec_key = $2 AND overlay <> $3 \
+         UNION ALL SELECT 1 FROM overlay_changes WHERE kind = $1 AND rec_key = $2 AND overlay <> $3 \
+         LIMIT 1",
+    )
+    .bind(kind)
+    .bind(key)
+    .bind(name)
+    .fetch_optional(&db.pool())
+    .await?;
+    Ok(row.is_some())
+}
+
+/// What each applied overlay holds: (overlay, kind, records it created, records it changed),
+/// ordered by overlay and kind. An overlay that only changed records has no created rows, and
+/// the other way round.
+pub async fn summary(db: &Db) -> Result<Vec<(String, String, i64, i64)>> {
+    let created: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT overlay, kind, COUNT(*) FROM overlay_records GROUP BY overlay, kind",
+    )
+    .fetch_all(&db.pool())
+    .await?;
+    let changed: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT overlay, kind, COUNT(*) FROM overlay_changes GROUP BY overlay, kind",
+    )
+    .fetch_all(&db.pool())
+    .await?;
+    let mut all: std::collections::BTreeMap<(String, String), (i64, i64)> = Default::default();
+    for (o, k, n) in created {
+        all.entry((o, k)).or_default().0 = n;
+    }
+    for (o, k, n) in changed {
+        all.entry((o, k)).or_default().1 = n;
+    }
+    Ok(all
+        .into_iter()
+        .map(|((o, k), (c, x))| (o, k, c, x))
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +191,16 @@ mod tests {
         let db = t.db();
         assert_eq!(owner(db, "room", "19/1").await.unwrap(), Owner::Realm);
         record(db, "room", "19/1", "ashfall").await.unwrap();
+        record_change(db, "item", "5", "ashfall", "[]")
+            .await
+            .unwrap();
+        assert_eq!(
+            summary(db).await.unwrap(),
+            vec![
+                ("ashfall".to_string(), "item".to_string(), 0, 1),
+                ("ashfall".to_string(), "room".to_string(), 1, 0),
+            ]
+        );
         record(db, "monster", "2100", "ashfall").await.unwrap();
         assert_eq!(
             owner(db, "room", "19/1").await.unwrap(),

@@ -12,6 +12,7 @@ pub mod overlay;
 pub mod restore;
 pub mod serve;
 pub mod service;
+pub mod site;
 pub mod sysop;
 
 use std::process::ExitCode;

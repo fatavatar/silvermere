@@ -27,8 +27,8 @@ could overwrite the changed ones. Start (or restart) the server afterwards.
 
 ```
 areas/ashfall/
-  overlay.toml     name = "ashfall-valley", and optionally description, after, overrides,
-                   references
+  overlay.toml     name = "ashfall-valley", and optionally title, description, credits,
+                   after, overrides, references, and [[news]]
   rooms.toml       any number of content files, read in name order
   monsters.toml
   text.toml
@@ -37,6 +37,38 @@ areas/ashfall/
 `name` is the overlay's identity: every record it creates is recorded as its own (the
 `overlay_records` table). Keep it stable; renaming an overlay makes its records look like
 someone else's.
+
+### What players see
+
+The realm's web site ([site.md](site.md)) lists the overlays of `content.overlays` and reads
+these keys of `overlay.toml`; nothing else does:
+
+| Key | Meaning |
+|---|---|
+| `title` | the overlay's name as players see it (`"Ashfall Valley"`); `name` when absent |
+| `description` | a sentence or two on what it is, for players |
+| `credits` | who made it, or the content it comes from |
+| `[[news]]` | what it brought, newest first on the site |
+
+Each `[[news]]` entry has a `date` (`YYYY-MM-DD`), a `title`, a `text` (paragraphs separated by
+blank lines; text between backticks shows as a command) and a `kind`:
+
+- `"new"`: new content. Write it as a hint that sends players looking, not a map: where the
+  rumour starts and what level should go, not what is there.
+- `"change"` and `"fix"`: changes to what was there. Write these plainly: what is different now.
+
+```toml
+[[news]]
+date = "2026-11-09"
+kind = "new"
+title = "Something stirs beneath the Volcano"
+text = """
+The miners who work the Volcano's lower tunnels have stopped going past a certain bend.
+A character of level 55 or so might go and look."""
+```
+
+`overlay export` keeps an `overlay.toml` already in its output directory (when it names the same
+overlay), so these survive regenerating an exported world.
 
 ## Load order
 
@@ -178,6 +210,28 @@ hand, copies in play) is not content and is not exported. Rooms go in one file p
 
 An export of a world against the world built from it (stock plus the export) finds nothing: a
 quick check that nothing was lost.
+
+## Adopting an overlay
+
+A realm imported from its own data files holds what its exported overlay holds, but nothing
+records that: an overlay written against it (`after = ["mudrev"]`) is refused, because `mudrev`
+was never applied there, and `mudrev` cannot be applied, because every record it would create
+already exists.
+
+```
+silvermere overlay adopt --check areas/mudrev   # what would be adopted; writes nothing
+silvermere overlay adopt areas/mudrev           # record it (stop the server first)
+```
+
+`adopt` builds every record the overlay creates and every change it makes, and compares them
+with the world. When the world holds them, it records the overlay as their owner and as having
+made the changes, in one transaction, writing no content; from then on the overlay is applied
+there, as if `apply` had written it. A record another overlay has changed since (Ashfall Valley
+changing a MudRev creature) is excused, and one another overlay has taken over stays that
+overlay's. Any other difference is a problem, and nothing is adopted.
+
+Records are read one at a time and only their keys kept, so a whole world's overlay is adopted
+in a few hundred megabytes.
 
 ## Re-imports
 

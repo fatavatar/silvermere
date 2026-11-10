@@ -2102,7 +2102,9 @@ dependencies = [
  "silvermere-db",
  "silvermere-engine",
  "silvermere-import",
+ "silvermere-mme",
  "silvermere-net",
+ "silvermere-site",
  "silvermere-testkit",
  "silvermere-text",
  "silvermere-types",
@@ -2216,6 +2218,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "silvermere-mme"
+version = "0.1.13"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "silvermere-db",
+ "silvermere-import",
+ "silvermere-types",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "silvermere-net"
 version = "0.1.13"
 dependencies = [
@@ -2233,6 +2248,16 @@ dependencies = [
  "rand 0.10.3",
  "rand_chacha 0.10.0",
  "serde_json",
+ "silvermere-types",
+]
+
+[[package]]
+name = "silvermere-site"
+version = "0.1.13"
+dependencies = [
+ "silvermere-import",
+ "silvermere-rules",
+ "silvermere-text",
  "silvermere-types",
 ]
 

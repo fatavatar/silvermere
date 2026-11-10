@@ -1267,6 +1267,192 @@ pub async fn write(db: &Db, plan: &Plan) -> Result<(), OverlayError> {
     Ok(())
 }
 
+/// What adopting an overlay found ([`adopt_dir`]).
+#[derive(Debug, Clone, Default)]
+pub struct Adoption {
+    pub overlay: String,
+    /// Records it creates, now recorded as its own.
+    pub owned: usize,
+    /// Records it changes, now recorded as changed by it.
+    pub changed: usize,
+    /// Records another overlay has taken over since: left that overlay's.
+    pub taken_over: usize,
+    /// Records another overlay has changed since, so no longer as this one made them: adopted
+    /// as they are.
+    pub changed_since: usize,
+}
+
+/// Adopts the overlay in `dir`: records that the world already holds it, for a world built
+/// before it was an overlay (a realm imported from the data files the overlay was exported
+/// from). No content is written; with `write_it`, the overlay's ownership and changes are
+/// recorded, in one transaction, as an `apply` would have recorded them.
+///
+/// Every record the overlay creates must exist and be as the overlay builds it, and every change
+/// must already be made. A record another overlay has changed since is excused, and one another
+/// overlay has taken over stays that overlay's. Anything else is a problem, and nothing is
+/// adopted. Records are read one at a time and only their keys kept, so a whole world's overlay
+/// is adopted in little memory.
+pub async fn adopt_dir(
+    db: &Db,
+    dir: &std::path::Path,
+    write_it: bool,
+) -> Result<Adoption, OverlayError> {
+    let overlay = super::load(dir)?;
+    let mut problems = Vec::new();
+    for needs in &overlay.after {
+        if !overlay_records::applied(db, needs).await.map_err(db_err)? {
+            problems.push(format!(
+                "`{}` loads after `{needs}`, which is not applied here",
+                overlay.name
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        return Err(OverlayError::Invalid(problems));
+    }
+    let mut report = Adoption {
+        overlay: overlay.name.clone(),
+        ..Adoption::default()
+    };
+    let mut owned: Vec<(String, String)> = Vec::new();
+    let mut created: std::collections::HashSet<(Kind, String)> = Default::default();
+    let mut changed: BTreeMap<(Kind, String), Map<String, Value>> = BTreeMap::new();
+    // a record this overlay both creates and changes is compared once its changes are in; only
+    // those are held whole
+    let changes_of: std::collections::HashSet<(Kind, String)> = overlay
+        .entries
+        .iter()
+        .filter(|e| e.change)
+        .map(|e| (e.kind, e.key.to_string()))
+        .collect();
+    let mut held: HashMap<(Kind, String), (Value, Value, Origin)> = HashMap::new();
+    for e in &overlay.entries {
+        let key = e.key.to_string();
+        let fail = |why: &str| format!("{}: {} {}: {why}", e.origin, e.kind, e.key);
+        let touched = || overlay_records::touched_by_others(db, e.kind.name(), &key, &overlay.name);
+        let Some(stored) = stored_record(db, e.kind, e.key.clone()).await? else {
+            problems.push(fail("does not exist in this world"));
+            continue;
+        };
+        if e.change {
+            // a change to a record this overlay creates is part of making it
+            if let Some((built, _, _)) = held.get_mut(&(e.kind, key.clone())) {
+                match merged(e.kind, built, &e.values) {
+                    Ok(v) => *built = v,
+                    Err(why) => problems.push(fail(&why)),
+                }
+                continue;
+            }
+            if created.contains(&(e.kind, key.clone())) {
+                continue;
+            }
+            let after = match merged(e.kind, &stored, &e.values) {
+                Ok(v) => v,
+                Err(why) => {
+                    problems.push(fail(&why));
+                    continue;
+                }
+            };
+            if design(e.kind, &after) != design(e.kind, &stored) {
+                if touched().await.map_err(db_err)? {
+                    report.changed_since += 1;
+                } else {
+                    problems.push(fail("this change is not made in this world"));
+                    continue;
+                }
+            }
+            let fields = changed.entry((e.kind, key)).or_default();
+            for k in e.values.keys() {
+                fields.insert(
+                    k.clone(),
+                    after.get(k.as_str()).cloned().unwrap_or(Value::Null),
+                );
+            }
+            continue;
+        }
+        if let Owner::Overlay(name) = overlay_records::owner(db, e.kind.name(), &key)
+            .await
+            .map_err(db_err)?
+            && name != overlay.name
+        {
+            report.taken_over += 1;
+            continue;
+        }
+        let mut world = World {
+            db,
+            stored: HashMap::new(),
+            pending: HashMap::new(),
+        };
+        let built = async {
+            let mut v = new_base(&mut world, e).await?;
+            if e.kind == Kind::Text {
+                v = text_value(&e.values)?;
+            } else {
+                build::merge(e.kind, &mut v, &e.values)?;
+            }
+            set_key(e.kind, e.key.clone(), &mut v);
+            Ok::<_, String>(v)
+        }
+        .await;
+        let v = match built {
+            Ok(v) => v,
+            Err(why) => {
+                problems.push(fail(&why));
+                continue;
+            }
+        };
+        created.insert((e.kind, key.clone()));
+        owned.push((e.kind.name().to_owned(), key.clone()));
+        if changes_of.contains(&(e.kind, key.clone())) {
+            held.insert((e.kind, key), (v, stored, e.origin.clone()));
+            continue;
+        }
+        if design(e.kind, &v) != design(e.kind, &stored) {
+            if touched().await.map_err(db_err)? {
+                report.changed_since += 1;
+            } else {
+                owned.pop();
+                problems.push(fail("differs from what the overlay makes"));
+            }
+        }
+    }
+    for ((kind, key), (built, stored, origin)) in held {
+        if design(kind, &built) != design(kind, &stored) {
+            if overlay_records::touched_by_others(db, kind.name(), &key, &overlay.name)
+                .await
+                .map_err(db_err)?
+            {
+                report.changed_since += 1;
+            } else {
+                problems.push(format!(
+                    "{origin}: {kind} {key}: differs from what the overlay makes"
+                ));
+            }
+        }
+    }
+    if !problems.is_empty() {
+        return Err(OverlayError::Invalid(problems));
+    }
+    report.owned = owned.len();
+    report.changed = changed.len();
+    if write_it {
+        let changed: Vec<(String, String, String)> = changed
+            .into_iter()
+            .map(|((kind, key), fields)| {
+                (
+                    kind.name().to_owned(),
+                    key,
+                    Value::Object(fields).to_string(),
+                )
+            })
+            .collect();
+        overlay_records::record_many(db, &overlay.name, &owned, &changed)
+            .await
+            .map_err(db_err)?;
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

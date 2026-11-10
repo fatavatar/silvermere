@@ -231,6 +231,19 @@ The content overlays the world is built with ([overlays.md](overlays.md)).
 |---|---|---|---|---|
 | `content.overlays` | `SILVERMERE_CONTENT__OVERLAYS` | `[]` | Overlay directories applied after every `silvermere import` (so also the stock world a first start builds), before any `--overlay`, and by `silvermere overlay check`/`apply` when given none. Applied in load order: each after the overlays its `after` names. Relative paths are from the directory silvermere runs in. | — |
 
+### [site]
+
+The realm's public web site ([site.md](site.md)).
+
+| Key | Environment variable | Default | Meaning | Original name |
+|---|---|---|---|---|
+| `site.bind` | `SILVERMERE_SITE__BIND` | `""` | Address (`host:port`) the web site listens on; the server then builds the site into `data/site/` each time it starts. Empty serves none. | — |
+| `site.build` | `SILVERMERE_SITE__BUILD` | `false` | Build the site each time the server starts even with `site.bind` empty, for another web server to serve `data/site/`. | — |
+| `site.name` | `SILVERMERE_SITE__NAME` | `""` | The realm's name, as the site shows it (and the MajorMUD Explorer database's `Custom` field). | — |
+| `site.tagline` | `SILVERMERE_SITE__TAGLINE` | `""` | One line under the name on the home page. | — |
+| `site.connect` | `SILVERMERE_SITE__CONNECT` | `""` | Where players connect, as they would type it: `realm.example.org:2323` or `telnet://realm.example.org:2323`. Empty hides the connect line. | — |
+| `site.mme` | `SILVERMERE_SITE__MME` | `true` | Build the MajorMUD Explorer database offered on the site's tools page. The first build downloads MME's own database (the template it is written into) into `data/cache/`. | — |
+
 ## Original options with no key
 
 | Original | What happened |

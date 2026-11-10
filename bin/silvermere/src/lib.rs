@@ -11,6 +11,8 @@ pub mod cmd_import;
 pub mod commands;
 pub mod config;
 pub mod gate;
+pub mod mme;
+pub mod site;
 pub mod stock;
 pub mod store;
 
@@ -426,6 +428,45 @@ pub async fn serve_world_with_db(
             tracing::error!(%e, "admin listener stopped");
         }
     })];
+    // The web site (docs/site.md): served from what the last build wrote while this start
+    // builds it again from the world it is about to run.
+    let site_listener = if cfg.site.bind.is_empty() {
+        None
+    } else {
+        let addr: SocketAddr = cfg.site.bind.parse()?;
+        Some(
+            tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("binding site.bind {addr}"))?,
+        )
+    };
+    if let Some(listener) = site_listener {
+        let root = site::site_dir(&cfg);
+        tracing::info!(addr = %listener.local_addr()?, "web site listening");
+        tokio::spawn(async move {
+            if let Err(e) = silvermere_api::serve_site(listener, root, std::future::pending()).await
+            {
+                tracing::error!(%e, "web site listener stopped");
+            }
+        });
+    }
+    if let Some(db) = db
+        .as_ref()
+        .filter(|_| !cfg.site.bind.is_empty() || cfg.site.build)
+    {
+        let (cfg, db) = (cfg.clone(), db.clone());
+        tokio::spawn(async move {
+            match site::build(&cfg, &db).await {
+                Ok(report) => {
+                    for w in &report.warnings {
+                        tracing::warn!("web site: {w}");
+                    }
+                    tracing::info!(dir = %report.dir.display(), files = report.files, "web site built");
+                }
+                Err(e) => tracing::warn!("web site not built: {e:#}"),
+            }
+        });
+    }
     let (gate_tx, gate_rx) = tmpsc::channel(256);
     let (gate_registry_tx, gate_registry_rx) = tmpsc::unbounded_channel();
     let (control_tx, control_rx) = tmpsc::unbounded_channel();
@@ -697,6 +738,7 @@ pub fn run(args: impl IntoIterator<Item = std::ffi::OsString>) -> anyhow::Result
         Import(a) => commands::import::run(&cfg, a),
         Migrate => commands::migrate::run(&cfg),
         Overlay { action } => commands::overlay::run(&cfg, action),
+        Site { action } => commands::site::run(&cfg, action),
         Backup(a) => commands::backup::run(&cfg, a),
         Restore(a) => commands::restore::run(&cfg, a),
         Account { action } => commands::account::run(&cfg, action),

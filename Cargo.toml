@@ -7,8 +7,10 @@ members = [
     "crates/silvermere-db",
     "crates/silvermere-engine",
     "crates/silvermere-import",
+    "crates/silvermere-mme",
     "crates/silvermere-net",
     "crates/silvermere-rules",
+    "crates/silvermere-site",
     "crates/silvermere-testkit",
     "crates/silvermere-text",
     "crates/silvermere-types",
@@ -33,8 +35,10 @@ silvermere-auth = { path = "crates/silvermere-auth" }
 silvermere-db = { path = "crates/silvermere-db" }
 silvermere-engine = { path = "crates/silvermere-engine" }
 silvermere-import = { path = "crates/silvermere-import" }
+silvermere-mme = { path = "crates/silvermere-mme" }
 silvermere-net = { path = "crates/silvermere-net" }
 silvermere-rules = { path = "crates/silvermere-rules" }
+silvermere-site = { path = "crates/silvermere-site" }
 silvermere-testkit = { path = "crates/silvermere-testkit" }
 silvermere-text = { path = "crates/silvermere-text" }
 silvermere-types = { path = "crates/silvermere-types" }

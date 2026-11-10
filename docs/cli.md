@@ -194,6 +194,7 @@ written as TOML and applied to the world in the database. Details: [overlays.md]
 ```
 silvermere overlay check [--database-url <URL>] [<DIR>...]
 silvermere overlay apply [--database-url <URL>] [<DIR>...]
+silvermere overlay adopt [--check] [--database-url <URL>] <DIR>
 silvermere overlay show [--database-url <URL>] <KIND> <KEY>
 silvermere overlay export --base <URL> --name <NAME> --out <DIR> [--database-url <URL>]
 ```
@@ -202,11 +203,24 @@ silvermere overlay export --base <URL> --name <NAME> --out <DIR> [--database-url
 |---|---|
 | `overlay check [<DIR>...]` | build each overlay against the database and report what it would create, change or leave; writes nothing, so it is safe while the server runs. With no directories, the ones in `content.overlays` |
 | `overlay apply [<DIR>...]` | the same, then write them; refuses while a server runs on the store |
+| `overlay adopt [--check] <DIR>` | record that the world already holds the overlay, writing no content: for a realm imported from the data files the overlay was exported from, so overlays written against it can be applied; refused unless the world holds what the overlay makes (records other overlays changed since excused). `--check` writes nothing; otherwise it refuses while a server runs on the store. See [overlays.md](overlays.md#adopting-an-overlay) |
 | `overlay show <KIND> <KEY>` | print a stored record (`room 1/1`, `monster 1206`, `action wave`, ...) as TOML in the field names an overlay uses, to copy from |
 | `overlay export --base <URL> --name <NAME> --out <DIR>` | write what this database's content holds beyond the base world's (`--base`, a database URL) as an overlay named `NAME` in `DIR`: applied to the base, it gives this content back |
 
 Overlays run in load order (each after the overlays its `after` names, otherwise in the order
 given); the first one with a problem stops the rest, and nothing of that one is written.
+
+## `silvermere site`
+
+The realm's web site. Details: [site.md](site.md).
+
+```
+silvermere site build [--database-url <URL>]
+```
+
+| Command | Meaning |
+|---|---|
+| `site build` | write the web site, and the MajorMUD Explorer database, to `data/site/` from the world as it is now; safe while the server runs (which builds it too, each time it starts) |
 
 ## `silvermere backup`
 

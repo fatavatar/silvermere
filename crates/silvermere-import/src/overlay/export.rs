@@ -263,7 +263,8 @@ fn escaped_parts(v: &Value) -> Value {
 }
 
 /// Writes the overlay `name` into `out`: what `db` holds that `base` does not, or holds
-/// differently. Files: `overlay.toml`, `rooms-<map>.toml` per map, and one file per other kind.
+/// differently. Files: `overlay.toml` (kept when `out` already has this overlay's),
+/// `rooms-<map>.toml` per map, and one file per other kind.
 pub async fn export(
     db: &Db,
     base: &Db,
@@ -339,16 +340,31 @@ pub async fn export(
             source,
         })
     };
-    write(
-        &out.join(super::MANIFEST),
-        format!(
-            "name = {}\n\
+    // a manifest already there (its description, credits and news are written by hand) stays,
+    // as long as it is this overlay's
+    let manifest = out.join(super::MANIFEST);
+    let keep = match super::manifest(out) {
+        Ok(m) if m.name == name => true,
+        Ok(m) => {
+            return Err(super::format_err(
+                &manifest,
+                format!("is overlay {:?}'s, not {name:?}", m.name),
+            ));
+        }
+        Err(_) => false,
+    };
+    if !keep {
+        write(
+            &manifest,
+            format!(
+                "name = {}\n\
              # A copy of an existing world: the numbers it points at that exist nowhere are that\n\
              # world's own, so they are warnings rather than problems.\n\
              references = \"warn\"\n",
-            toml_string(name)
-        ),
-    )?;
+                toml_string(name)
+            ),
+        )?;
+    }
     for (file, entries) in files {
         let mut table = Map::new();
         for (entry_name, list) in entries {
