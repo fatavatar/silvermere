@@ -42,7 +42,7 @@ RUN T="$(cat /target)" \
 FROM gcr.io/distroless/static:nonroot
 ARG VERSION=dev
 ARG REVISION=unknown
-LABEL org.opencontainers.image.source="https://github.com/jnfisher/silvermere" \
+LABEL org.opencontainers.image.source="https://github.com/fatavatar/silvermere" \
       org.opencontainers.image.title="silvermere" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"

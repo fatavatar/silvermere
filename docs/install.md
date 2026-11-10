@@ -7,7 +7,7 @@ stock 1.11p world is downloaded once, on the first import, and checked (see
 From nothing to logged in on Linux (x86_64 or aarch64), with no Rust toolchain:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
 ```
 
 It downloads the latest release, checks its SHA-256, installs it in `~/silvermere`, downloads
@@ -38,7 +38,7 @@ of input as the password, and a pasted block's next line is already waiting.
 
 The image and release archives are published from the first tagged release. Until then, build locally (`docker compose -f docker/compose.yaml build`, or `cargo build --release`); for Fly.io or Kubernetes, push your own build to your own registry and use that image name below.
 
-Ports: telnet `2323`, admin API `8080` (loopback by default). Image: `ghcr.io/jnfisher/silvermere`
+Ports: telnet `2323`, admin API `8080` (loopback by default). Image: `ghcr.io/fatavatar/silvermere`
 (`latest` and version tags). Settings are in [config.md](config.md); `silvermere config show`
 prints them and `silvermere config set KEY VALUE` changes one.
 
@@ -117,9 +117,9 @@ plus `SHA256SUMS`.
 ### install.sh (Linux)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
 # a given release, or another folder:
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh -s -- --version 0.7.0 --prefix ~/sm
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh -s -- --version 0.7.0 --prefix ~/sm
 ```
 
 [packaging/install.sh](../packaging/install.sh) is plain POSIX sh; read it first if you like.
@@ -146,7 +146,7 @@ It says what it is about to do and asks before doing it. Then it:
 
 The checksum shows the archive arrived intact and matches what the release lists. It comes from
 the same place as the archive, so it does not prove who published it: the trust is in the
-`jnfisher/silvermere` GitHub releases, over HTTPS. To check by hand first, download the archive
+`fatavatar/silvermere` GitHub releases, over HTTPS. To check by hand first, download the archive
 and `SHA256SUMS` from the release page and follow [By hand](#by-hand).
 
 It refuses to run as root. For a system service run by its own `silvermere` user, run it as
@@ -305,7 +305,7 @@ API (`8080`) stays on loopback.
 As `you`, with no Rust toolchain:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
 ```
 
 Answer its questions: go ahead, Enter for SQLite, the sysop's name and password, then yes to
@@ -341,7 +341,7 @@ Build from a clone, as `you`:
 sudo apt-get install -y build-essential pkg-config git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 . ~/.cargo/env
-git clone https://github.com/jnfisher/silvermere.git ~/silvermere   # or your deploy key's URL
+git clone https://github.com/fatavatar/silvermere.git ~/silvermere   # or your deploy key's URL
 cd ~/silvermere && cargo build --release --locked                    # rustup fetches the pinned toolchain
 ```
 
@@ -712,8 +712,8 @@ app = "my-silvermere"
 Create the volume with `fly volumes create silvermere_data`. The server exits on an empty database, so import first, through a temporary machine:
 
 ```sh
-fly machine run ghcr.io/jnfisher/silvermere:latest --volume silvermere_data:/data --rm -- import
-fly deploy --image ghcr.io/jnfisher/silvermere:latest
+fly machine run ghcr.io/fatavatar/silvermere:latest --volume silvermere_data:/data --rm -- import
+fly deploy --image ghcr.io/fatavatar/silvermere:latest
 ```
 
 To import your own files instead, copy them in first. The silvermere image has no shell, and a new volume is owned by root, so use a small image for the copy:
@@ -723,8 +723,8 @@ fly machine run busybox --volume silvermere_data:/data -- sleep 3600     # note 
 fly ssh sftp shell                                                      # put -r legacy /data/legacy
 fly ssh console -C "chown -R 65532:65532 /data"
 fly machine destroy MACHINE_ID --force
-fly machine run ghcr.io/jnfisher/silvermere:latest --volume silvermere_data:/data --rm -- import --from /data/legacy
-fly deploy --image ghcr.io/jnfisher/silvermere:latest
+fly machine run ghcr.io/fatavatar/silvermere:latest --volume silvermere_data:/data --rm -- import --from /data/legacy
+fly deploy --image ghcr.io/fatavatar/silvermere:latest
 ```
 
 **Kubernetes.** One Deployment, one PVC, one Service. No Helm chart.
@@ -748,7 +748,7 @@ spec:
       securityContext: { fsGroup: 65532 }
       containers:
         - name: silvermere
-          image: ghcr.io/jnfisher/silvermere:latest
+          image: ghcr.io/fatavatar/silvermere:latest
           env: [{ name: SILVERMERE_SERVER__ADMIN_BIND, value: "127.0.0.1:8080" }]   # the image default needs a token
           ports: [{ containerPort: 2323 }]
           volumeMounts: [{ name: data, mountPath: /data }]
@@ -775,7 +775,7 @@ kubectl cp ./legacy loader:/data/legacy
 kubectl exec loader -- chown -R 65532:65532 /data
 kubectl delete pod loader
 # 2. import (the image has no shell; run the binary directly)
-kubectl run importer --image=ghcr.io/jnfisher/silvermere:latest --restart=Never --overrides='{"spec":{"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"silvermere-data"}}],"containers":[{"name":"importer","image":"ghcr.io/jnfisher/silvermere:latest","args":["import","--from","/data/legacy"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}]}}'
+kubectl run importer --image=ghcr.io/fatavatar/silvermere:latest --restart=Never --overrides='{"spec":{"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"silvermere-data"}}],"containers":[{"name":"importer","image":"ghcr.io/fatavatar/silvermere:latest","args":["import","--from","/data/legacy"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}]}}'
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/importer --timeout=10m
 kubectl logs importer
 kubectl delete pod importer
@@ -1006,9 +1006,9 @@ server keeps.
 1. Run the same one-liner again, as the same user:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sh
+   curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sh
    # a system service in /opt/silvermere:
-   curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sudo sh -s -- --system
+   curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sudo sh -s -- --system
    ```
 
    Add `--version 0.7.0` for a given release and `--prefix DIR` if you installed elsewhere.

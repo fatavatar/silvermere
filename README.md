@@ -55,7 +55,7 @@ Or with cargo, from a clone ([rustup](https://rustup.rs) and a C linker, `build-
 Debian and Ubuntu):
 
 ```sh
-git clone https://github.com/jnfisher/silvermere.git
+git clone https://github.com/fatavatar/silvermere.git
 cd silvermere
 cargo build --release              # rustup fetches the toolchain pinned in rust-toolchain.toml
 ./target/release/silvermere
@@ -80,7 +80,7 @@ With [Homebrew](https://brew.sh):
 xcode-select --install             # the linker, if the command line tools are not installed
 brew install rustup
 export PATH="$(brew --prefix rustup)/bin:$PATH"   # Homebrew keeps rustup off the PATH; add this to ~/.zshrc
-git clone https://github.com/jnfisher/silvermere.git
+git clone https://github.com/fatavatar/silvermere.git
 cd silvermere
 cargo build --release              # rustup fetches the toolchain pinned in rust-toolchain.toml
 ./target/release/silvermere
@@ -107,7 +107,7 @@ connection, not the pooled one: the server holds an advisory lock for its lifeti
 As root, or with sudo:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sudo sh -s -- --system
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sudo sh -s -- --system
 ```
 
 It downloads the latest release, checks its SHA-256, installs it in `/opt/silvermere`, builds
@@ -121,7 +121,7 @@ For a hosted PostgreSQL, add `--hosted`. It asks for the database URL (hidden as
 and keeps it in `/etc/silvermere/env`, mode 600:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnfisher/silvermere/main/packaging/install.sh | sudo sh -s -- --system --hosted
+curl -fsSL https://raw.githubusercontent.com/fatavatar/silvermere/main/packaging/install.sh | sudo sh -s -- --system --hosted
 ```
 
 To change the URL later:
