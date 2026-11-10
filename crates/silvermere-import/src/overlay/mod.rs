@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-pub use apply::{Plan, apply_dirs, plan, stored_record, write};
+pub use apply::{Adoption, Plan, adopt_dir, apply_dirs, plan, stored_record, write};
 pub use export::{ExportReport, export};
 
 /// The manifest file of an overlay directory.
@@ -293,22 +293,95 @@ fn read_toml(path: &Path) -> Result<Map<String, Value>, OverlayError> {
     }
 }
 
-/// Reads the overlay in `dir`: `overlay.toml`, then every other `*.toml` in name order.
-pub fn load(dir: &Path) -> Result<Overlay, OverlayError> {
+/// An overlay's `overlay.toml`, read alone (no content files): what the realm's web page
+/// lists.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Manifest {
+    /// `name`.
+    pub name: String,
+    /// `title`: the name players see (the web site's); empty for `name`.
+    pub title: String,
+    /// `description`.
+    pub description: String,
+    /// `credits`: who made the overlay, or the content it was made from.
+    pub credits: String,
+    /// `after`.
+    pub after: Vec<String>,
+    /// `overrides`.
+    pub overrides: Vec<String>,
+    /// `references = "warn"`.
+    pub references_warn: bool,
+    /// `[[news]]`, newest first.
+    pub news: Vec<News>,
+}
+
+/// One `[[news]]` entry of a manifest: what the realm's web page says the overlay brought.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct News {
+    /// `date`, `YYYY-MM-DD`.
+    pub date: String,
+    /// `title`.
+    pub title: String,
+    /// `kind`.
+    pub kind: NewsKind,
+    /// `text`: paragraphs separated by blank lines.
+    pub text: String,
+}
+
+/// What a news entry is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsKind {
+    /// `"new"`: new content, to be found in the game. Written as a hint, not a map.
+    New,
+    /// `"change"`: a change to what exists, written plainly.
+    Change,
+    /// `"fix"`: a correction, written plainly.
+    Fix,
+}
+
+impl NewsKind {
+    /// The word written in `kind`.
+    pub fn name(self) -> &'static str {
+        match self {
+            NewsKind::New => "new",
+            NewsKind::Change => "change",
+            NewsKind::Fix => "fix",
+        }
+    }
+}
+
+/// Reads `overlay.toml` in `dir`.
+pub fn manifest(dir: &Path) -> Result<Manifest, OverlayError> {
     let manifest_path = dir.join(MANIFEST);
     let manifest = read_toml(&manifest_path)?;
     let name = match manifest.get("name") {
         Some(Value::String(s)) if !s.trim().is_empty() => s.trim().to_string(),
         _ => return Err(format_err(&manifest_path, "needs `name = \"...\"`")),
     };
-    let description = match manifest.get("description") {
-        Some(Value::String(s)) => s.clone(),
-        _ => String::new(),
+    let text = |k: &str| -> Result<String, OverlayError> {
+        match manifest.get(k) {
+            None => Ok(String::new()),
+            Some(Value::String(s)) => Ok(s.clone()),
+            Some(_) => Err(format_err(
+                &manifest_path,
+                format!("`{k}` must be a string"),
+            )),
+        }
     };
+    let title = text("title")?;
+    let description = text("description")?;
+    let credits = text("credits")?;
     if let Some(k) = manifest.keys().find(|k| {
         !matches!(
             k.as_str(),
-            "name" | "description" | "after" | "overrides" | "references"
+            "name"
+                | "title"
+                | "description"
+                | "credits"
+                | "after"
+                | "overrides"
+                | "references"
+                | "news"
         )
     }) {
         return Err(format_err(&manifest_path, format!("unknown key `{k}`")));
@@ -340,8 +413,92 @@ pub fn load(dir: &Path) -> Result<Overlay, OverlayError> {
             ));
         }
     };
-    let after = names("after")?;
-    let overrides = names("overrides")?;
+    let news = match manifest.get("news") {
+        None => Vec::new(),
+        Some(Value::Array(list)) => list
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                news(v).map_err(|r| format_err(&manifest_path, format!("news {}: {r}", i + 1)))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => {
+            return Err(format_err(
+                &manifest_path,
+                "`news` must be written [[news]]",
+            ));
+        }
+    };
+    let mut news = news;
+    news.sort_by(|a, b| b.date.cmp(&a.date));
+    Ok(Manifest {
+        name,
+        title,
+        description,
+        credits,
+        after: names("after")?,
+        overrides: names("overrides")?,
+        references_warn,
+        news,
+    })
+}
+
+fn news(v: &Value) -> Result<News, String> {
+    let Value::Object(m) = v else {
+        return Err("not a table".into());
+    };
+    if let Some(k) = m
+        .keys()
+        .find(|k| !matches!(k.as_str(), "date" | "title" | "kind" | "text"))
+    {
+        return Err(format!("unknown key `{k}`"));
+    }
+    let field = |k: &str| -> Result<String, String> {
+        match m.get(k) {
+            Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().to_owned()),
+            _ => Err(format!("needs `{k}`")),
+        }
+    };
+    let date = field("date")?;
+    let valid = date.len() == 10
+        && date.bytes().enumerate().all(|(i, b)| {
+            if i == 4 || i == 7 {
+                b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }
+        });
+    if !valid {
+        return Err(format!("`date` is YYYY-MM-DD, not {date:?}"));
+    }
+    let kind = match field("kind")?.as_str() {
+        "new" => NewsKind::New,
+        "change" => NewsKind::Change,
+        "fix" => NewsKind::Fix,
+        other => {
+            return Err(format!(
+                "`kind` is \"new\", \"change\" or \"fix\", not {other:?}"
+            ));
+        }
+    };
+    Ok(News {
+        date,
+        title: field("title")?,
+        kind,
+        text: field("text")?,
+    })
+}
+
+/// Reads the overlay in `dir`: `overlay.toml`, then every other `*.toml` in name order.
+pub fn load(dir: &Path) -> Result<Overlay, OverlayError> {
+    let Manifest {
+        name,
+        description,
+        after,
+        overrides,
+        references_warn,
+        ..
+    } = manifest(dir)?;
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(|source| OverlayError::Io {
             path: dir.to_path_buf(),

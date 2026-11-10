@@ -20,6 +20,9 @@ pub enum OverlayCmd {
     Check(OverlayArgs),
     /// Write overlays into the database (stop the server first).
     Apply(OverlayArgs),
+    /// Record that the world already holds an overlay (a realm imported from the data files the
+    /// overlay was exported from), writing no content (stop the server first).
+    Adopt(AdoptArgs),
     /// Print a stored record as an overlay entry names its fields, to copy from.
     Show(ShowArgs),
     /// Write what this database holds beyond a base world as an overlay.
@@ -44,6 +47,19 @@ pub struct ExportArgs {
     pub database_url: Option<String>,
 }
 
+/// `overlay adopt` arguments.
+#[derive(Debug, Clone, Args)]
+pub struct AdoptArgs {
+    /// The overlay's directory.
+    pub dir: PathBuf,
+    /// Check only: say what would be adopted, and write nothing.
+    #[arg(long)]
+    pub check: bool,
+    /// Database URL (sqlite:// or postgres://); overrides `database.url`.
+    #[arg(long)]
+    pub database_url: Option<String>,
+}
+
 /// `overlay show` arguments.
 #[derive(Debug, Clone, Args)]
 pub struct ShowArgs {
@@ -62,6 +78,7 @@ impl OverlayCmd {
         match self {
             Self::Check(a) | Self::Apply(a) => a.database_url.as_deref(),
             Self::Show(a) => a.database_url.as_deref(),
+            Self::Adopt(a) => a.database_url.as_deref(),
             Self::Export(a) => a.database_url.as_deref(),
         }
     }
@@ -99,6 +116,8 @@ pub fn run(cfg: &Config, cmd: &OverlayCmd) -> anyhow::Result<ExitCode> {
             let dirs = dirs_of(cfg, a)?;
             super::with_guard(cfg, "overlay apply", || apply_all(cfg, &dirs, true))
         }
+        OverlayCmd::Adopt(a) if a.check => adopt(cfg, a),
+        OverlayCmd::Adopt(a) => super::with_guard(cfg, "overlay adopt", || adopt(cfg, a)),
         OverlayCmd::Show(a) => show(cfg, a),
         OverlayCmd::Export(a) => export(cfg, a),
     }
@@ -167,6 +186,35 @@ fn show(cfg: &Config, a: &ShowArgs) -> anyhow::Result<ExitCode> {
 
 /// Plans (and with `write`, writes) the overlays in `dirs` in load order and prints what each
 /// did. The first overlay with a problem stops the rest; what earlier ones wrote stays.
+/// `overlay adopt`.
+fn adopt(cfg: &Config, a: &AdoptArgs) -> anyhow::Result<ExitCode> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async {
+        let db = Db::connect_and_migrate(&cfg.database.url)
+            .await
+            .with_context(|| format!("opening {}", cfg.database_shown()))?;
+        let result = overlay::adopt_dir(&db, &a.dir, !a.check).await;
+        db.close().await;
+        match result {
+            Ok(r) => {
+                let verb = if a.check { "would adopt" } else { "adopted" };
+                println!(
+                    "overlay [{}]: {verb}: {} records it created, {} it changed ({} changed since by \
+                     other overlays, {} taken over by them and left theirs); no content written",
+                    r.overlay, r.owned, r.changed, r.changed_since, r.taken_over
+                );
+                Ok(ExitCode::SUCCESS)
+            }
+            Err(e) => {
+                eprintln!("overlay adopt: {e}");
+                Ok(ExitCode::from(1))
+            }
+        }
+    })
+}
+
 pub fn apply_all(cfg: &Config, dirs: &[PathBuf], write: bool) -> anyhow::Result<ExitCode> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

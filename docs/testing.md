@@ -35,3 +35,14 @@ The differential harness (`tools/differential/`) runs the original module under 
 silvermere and compares their output. It needs an installed copy of the game with its program
 files, which this repository does not hold, so it is not part of `cargo test` or CI here.
 `docs/import.md` describes importing from an installed copy.
+
+## The MajorMUD Explorer writer
+
+`crates/silvermere-mme/tests/jet.rs` reads every table of MME's own database, writes it back and
+reads it again. That database is MME's, not in this repository; the test runs when
+`SILVERMERE_MME_TEMPLATE` names a copy (a `silvermere site build` leaves one in
+`data/cache/mme-data-v1.11p.mdb`) and says it was skipped otherwise.
+
+```bash
+SILVERMERE_MME_TEMPLATE=data/cache/mme-data-v1.11p.mdb cargo test -p silvermere-mme
+```

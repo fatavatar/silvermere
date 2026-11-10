@@ -1,4 +1,5 @@
-//! Admin HTTP API (health, metrics, event stream; CRUD reserved).
+//! Admin HTTP API (health, metrics, event stream; CRUD reserved), and the static server of
+//! the realm's public web site ([`site`]).
 //!
 //! A token-authenticated HTTP and JSON admin API served with axum on the admin port: health,
 //! Prometheus metrics, who, broadcast, world reload and a server-sent event stream. The
@@ -23,6 +24,7 @@ pub mod metrics;
 pub mod reload;
 pub mod reserved;
 pub mod router;
+pub mod site;
 pub mod who;
 
 pub use auth::{Scope, Token};
@@ -31,6 +33,7 @@ pub use events::{EventKind, EventLog, EventRecord, NewEvent};
 pub use health::HealthProbe;
 pub use reload::WorldLoader;
 pub use router::{ApiState, RouteSpec, router, routes, serve};
+pub use site::{serve_site, site_router};
 
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 

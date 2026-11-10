@@ -110,3 +110,11 @@ after_timeout_secs = 1800   # seconds before that command is killed
 
 [content]
 overlays = []   # content overlay folders applied after every import, e.g. ["areas/mudrev"] (docs/overlays.md)
+
+[site]
+bind = ""   # address the realm's web site listens on, e.g. "0.0.0.0:8000"; empty: none (docs/site.md)
+build = false   # build the site at each start even with no bind, for another web server
+name = ""   # the realm's name on the site
+tagline = ""   # one line under the name on the home page
+connect = ""   # where players connect, e.g. "realm.example.org:2323"; empty hides the connect line
+mme = true   # build the MajorMUD Explorer database for the download page

@@ -54,6 +54,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::commands::overlay::OverlayCmd,
     },
+    /// The realm's web site (docs/site.md).
+    Site {
+        #[command(subcommand)]
+        action: crate::commands::site::SiteCmd,
+    },
     /// Probe the admin API's /healthz (for container health checks).
     Healthcheck(crate::commands::healthcheck::HealthcheckArgs),
     /// Manage accounts.

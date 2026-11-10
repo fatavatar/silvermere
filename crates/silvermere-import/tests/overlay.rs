@@ -486,3 +486,65 @@ async fn overlays_load_in_order_and_an_addon_overrides_its_base() {
     assert!(err.contains("wait for another"), "{err}");
     t.close().await;
 }
+
+/// A world that holds an overlay's content without its records (a realm imported from the files
+/// the overlay was exported from) adopts it: ownership and changes recorded, nothing written,
+/// and refused when the world does not hold what the overlay makes.
+#[tokio::test]
+async fn a_world_that_holds_an_overlay_adopts_it() {
+    let t = TestDb::from_env().await.expect("test database");
+    let db = t.db();
+    stock_world(db).await;
+    let entrance = db.rooms().get(RoomKey::new(1, 1)).await.unwrap().unwrap();
+    let tpl = templates(db).await;
+    let d = overlay_dir("adopted", &area(&entrance.name, 400, tpl));
+    apply(db, &d).await.expect("apply");
+    // forget it was applied: the content stays, the records go
+    for sql in [
+        "DELETE FROM overlay_records WHERE overlay = 'adopted'",
+        "DELETE FROM overlay_changes WHERE overlay = 'adopted'",
+    ] {
+        sqlx::query(sql).execute(&db.pool()).await.unwrap();
+    }
+    assert!(
+        !silvermere_db::overlay_records::applied(db, "adopted")
+            .await
+            .unwrap()
+    );
+
+    // the world differs from an edited overlay: nothing adopted
+    // (its own directory: `overlay_dir` makes one per name)
+    let edited = overlay_dir("adopted-edited", &area(&entrance.name, 450, tpl));
+    let err = overlay::adopt_dir(db, &edited, true)
+        .await
+        .expect_err("differs");
+    assert!(err.to_string().contains("monster 9001"), "{err}");
+    assert!(
+        !silvermere_db::overlay_records::applied(db, "adopted")
+            .await
+            .unwrap()
+    );
+
+    // a check writes nothing; the adoption records what an apply recorded
+    let checked = overlay::adopt_dir(db, &d, false).await.expect("check");
+    assert_eq!((checked.owned, checked.changed), (9, 1));
+    assert!(
+        !silvermere_db::overlay_records::applied(db, "adopted")
+            .await
+            .unwrap()
+    );
+    overlay::adopt_dir(db, &d, true).await.expect("adopt");
+    assert_eq!(
+        silvermere_db::overlay_records::owner(db, "monster", "9001")
+            .await
+            .unwrap(),
+        silvermere_db::overlay_records::Owner::Overlay("adopted".into())
+    );
+    // and the overlay is now its own: applying it again changes nothing
+    let again = apply(db, &d).await.expect("reapply");
+    assert!(
+        again.records.iter().all(|p| p.action == Action::Unchanged),
+        "{again}"
+    );
+    t.close().await;
+}

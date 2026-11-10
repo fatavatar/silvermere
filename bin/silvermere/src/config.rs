@@ -30,6 +30,8 @@ pub struct Config {
     pub backup: BackupCfg,
     /// `[content]`: the content overlays the world is built with.
     pub content: ContentCfg,
+    /// `[site]`: the realm's public web site (docs/site.md).
+    pub site: SiteCfg,
     /// `[admin]`: the admin API's tokens (`[[admin.tokens]]`).
     pub admin: AdminCfg,
 }
@@ -42,6 +44,39 @@ pub struct ContentCfg {
     /// start builds too), before any `--overlay`, and by `silvermere overlay check`/`apply`
     /// when they are given none. Applied in load order (each overlay's `after`).
     pub overlays: Vec<PathBuf>,
+}
+
+/// `[site]` (docs/site.md).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SiteCfg {
+    /// Address the web site listens on; empty serves none.
+    pub bind: String,
+    /// Build the site each time the server starts even when `bind` is empty, for another web
+    /// server to serve `<data_dir>/site`. With `bind` set it is always built.
+    pub build: bool,
+    /// The realm's name, as the site shows it.
+    pub name: String,
+    /// One line under the name on the home page.
+    pub tagline: String,
+    /// Where players connect, as they would type it (`realm.example.org:2323`); empty hides
+    /// the connect line.
+    pub connect: String,
+    /// Build the MajorMUD Explorer database for the site's download page.
+    pub mme: bool,
+}
+
+impl Default for SiteCfg {
+    fn default() -> Self {
+        Self {
+            bind: String::new(),
+            build: false,
+            name: String::new(),
+            tagline: String::new(),
+            connect: String::new(),
+            mme: true,
+        }
+    }
 }
 
 /// `[admin]`.
@@ -266,6 +301,7 @@ impl Default for Config {
             logging: LoggingCfg::default(),
             backup: BackupCfg::default(),
             content: ContentCfg::default(),
+            site: SiteCfg::default(),
             admin: AdminCfg::default(),
         }
     }
@@ -483,6 +519,14 @@ impl Config {
         ] {
             v.parse::<SocketAddr>()
                 .map_err(|e| format!("{key} = {v:?} is not a host:port address ({e})"))?;
+        }
+        if !self.site.bind.is_empty() {
+            self.site.bind.parse::<SocketAddr>().map_err(|e| {
+                format!(
+                    "site.bind = {:?} is not a host:port address ({e})",
+                    self.site.bind
+                )
+            })?;
         }
         if !(1..=100_000).contains(&self.server.max_sessions) {
             return Err(format!(
