@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use jiff::tz::TimeZone;
 use silvermere_db::Db;
+use silvermere_db::repo::accounts::FLAG_DOOR;
 use silvermere_db::repo::{Account, StateWrite};
 use silvermere_types::records::{BankBook, Character, LayoutSet};
 
@@ -195,6 +196,9 @@ pub struct ImportOptions {
     pub reset_state: bool,
     /// Import `WCCUSERS` rows as characters (`--with-users`).
     pub with_users: bool,
+    /// Mark the players' accounts for the rlogin door (`--door-users`): a BBS that sends
+    /// a caller of the same name logs them in without a password. Only with `with_users`.
+    pub door_users: bool,
     /// Keep the first of records with the same key instead of failing
     /// (`--allow-duplicates`).
     pub allow_duplicates: bool,
@@ -227,6 +231,7 @@ impl ImportOptions {
             content_only: false,
             reset_state: false,
             with_users: false,
+            door_users: false,
             allow_duplicates: false,
             legacy_tz: TimeZone::UTC,
             no_patches: false,
@@ -518,8 +523,12 @@ pub struct Report {
     /// one line each.
     pub uncarried: Vec<Note>,
     /// After an import that created players' accounts (`--with-users`, `--live`): how
-    /// many accounts in the store have no password, so nobody can log in to them yet.
+    /// many accounts in the store have no password, so nobody can log in to them over
+    /// telnet yet.
     pub accounts_without_password: Option<u32>,
+    /// After an import with `--door-users`: how many accounts in the store the rlogin door
+    /// may log in to.
+    pub door_accounts: Option<u32>,
     /// A dry run's value checks ([`crate::checks`]), one line each.
     pub checks: Vec<String>,
     /// Data files of the other build beside the set, not read.
@@ -560,8 +569,15 @@ impl fmt::Display for Report {
         if let Some(n) = self.accounts_without_password.filter(|&n| n > 0) {
             writeln!(
                 f,
-                "{n} account(s) have no password and cannot log in yet; give each a random \
-                 one with `{SET_MISSING_PASSWORDS}`"
+                "{n} account(s) have no password and cannot log in over telnet yet; give each \
+                 a random one with `{SET_MISSING_PASSWORDS}`"
+            )?;
+        }
+        if let Some(n) = self.door_accounts {
+            writeln!(
+                f,
+                "{n} account(s) can be logged in to from the BBS door (server.rlogin_bind) \
+                 without a password"
             )?;
         }
         for line in &self.checks {
@@ -987,6 +1003,7 @@ impl<'a> Importer<'a> {
         }
         let start = Instant::now();
         let mut accounts_without_password = None;
+        let mut door_accounts = None;
         if !self.opts.dry_run {
             let db = self.db.expect("a database unless --dry-run");
             // T-109: marked before the first table and after the last, so a start can tell
@@ -1017,6 +1034,13 @@ impl<'a> Importer<'a> {
                     .filter(|a| a.account.password_hash.is_empty())
                     .count();
                 accounts_without_password = Some(u32::try_from(n).unwrap_or(u32::MAX));
+                if self.opts.door_users {
+                    let n = all
+                        .iter()
+                        .filter(|a| a.account.flags & FLAG_DOOR != 0)
+                        .count();
+                    door_accounts = Some(u32::try_from(n).unwrap_or(u32::MAX));
+                }
             }
         }
         let mut uncarried = content.uncarried.clone();
@@ -1030,6 +1054,7 @@ impl<'a> Importer<'a> {
             assets: Vec::new(),
             uncarried,
             accounts_without_password,
+            door_accounts,
             ignored: content.ignored.clone(),
             set: content.set,
             checks: if self.opts.dry_run {
@@ -1468,7 +1493,7 @@ impl<'a> Plan<'a> {
             None => Vec::new(),
         };
         let characters = try_conv(&self.users, |r| decode::to_character(r, clock))?;
-        let kept = write_characters(db, &characters, state).await?;
+        let kept = write_characters(db, &characters, state, opts.door_users).await?;
         notes.extend(kept.into_iter().map(|i| {
             let d = self.users[i];
             Note {
@@ -1518,24 +1543,34 @@ async fn timed(
 }
 
 /// The account a character or bank book belongs to: the one named by the userid,
-/// created (with no password) for a character that has none.
+/// created (with no password) for a character that has none. With `door`
+/// (`--door-users`) the account carries the rlogin door flag, an existing one included:
+/// the sysop has said the BBS's users are these players.
 async fn account_for(
     db: &Db,
     userid: &str,
     create: bool,
+    door: bool,
 ) -> Result<Option<silvermere_types::ids::AccountId>, ImportError> {
     let accounts = db.accounts();
     let e = |source| ImportError::Db {
         table: "accounts",
         source,
     };
-    if let Some(row) = accounts.by_username(userid).await.map_err(e)? {
+    if let Some(mut row) = accounts.by_username(userid).await.map_err(e)? {
+        if door && row.account.flags & FLAG_DOOR == 0 {
+            row.account.flags |= FLAG_DOOR;
+            accounts.update(row.id, &row.account).await.map_err(e)?;
+        }
         return Ok(Some(row.id));
     }
     if !create {
         return Ok(None);
     }
-    let account = Account::new(userid, "", jiff::Timestamp::now());
+    let mut account = Account::new(userid, "", jiff::Timestamp::now());
+    if door {
+        account.flags |= FLAG_DOOR;
+    }
     Ok(Some(accounts.insert(&account).await.map_err(e)?))
 }
 
@@ -1546,6 +1581,7 @@ async fn write_characters(
     db: &Db,
     characters: &[Character],
     state: StateWrite,
+    door: bool,
 ) -> Result<Vec<usize>, ImportError> {
     let e = |source| ImportError::Db {
         table: "characters",
@@ -1553,7 +1589,7 @@ async fn write_characters(
     };
     let mut kept = Vec::new();
     for (i, c) in characters.iter().enumerate() {
-        let Some(account) = account_for(db, &c.userid, true).await? else {
+        let Some(account) = account_for(db, &c.userid, true, door).await? else {
             continue;
         };
         match db.characters().by_account(account).await.map_err(e)? {
@@ -1581,7 +1617,7 @@ async fn write_bank_books(
     };
     let mut missing = 0;
     for book in books {
-        let Some(account) = account_for(db, &book.userid, false).await? else {
+        let Some(account) = account_for(db, &book.userid, false, false).await? else {
             missing += 1;
             continue;
         };
@@ -1691,7 +1727,7 @@ async fn write_genbb(
 ) -> Result<(), ImportError> {
     let e = |table| move |source| ImportError::Db { table, source };
     for p in profiles {
-        let Some(account) = account_for(db, &p.userid, false).await? else {
+        let Some(account) = account_for(db, &p.userid, false, false).await? else {
             continue;
         };
         let exists = db
@@ -1708,7 +1744,7 @@ async fn write_genbb(
         }
     }
     for v in evil {
-        let Some(account) = account_for(db, &v.userid, false).await? else {
+        let Some(account) = account_for(db, &v.userid, false, false).await? else {
             continue;
         };
         let exists = db
