@@ -469,6 +469,17 @@ pub fn parse_dll_text(data: &[u8]) -> Result<BTreeMap<String, String>, PackageEr
     Ok(out)
 }
 
+/// The realm's own text from the database, which replaces the message files' when the
+/// text is loaded ([`PackageText::load_with`]).
+#[derive(Debug, Clone, Default)]
+pub struct RealmText {
+    /// The help file's entries (`HL1B0`, then topic and text pairs), when the database has
+    /// help topics.
+    pub help: Option<Vec<MsgEntry>>,
+    /// Text blocks of `WCCMMUD.MSG` and `WCCTEXT.MSG` by message name.
+    pub texts: HashMap<String, String>,
+}
+
 /// The game's long text, parsed and checked.
 #[derive(Debug, Clone)]
 pub struct PackageText {
@@ -487,6 +498,12 @@ pub struct PackageText {
 impl PackageText {
     /// Reads and checks the files from the assets directory `dir`.
     pub fn load(dir: &Path) -> Result<PackageText, PackageError> {
+        Self::load_with(dir, &RealmText::default())
+    }
+
+    /// [`PackageText::load`] with the realm's text from the database in place of the
+    /// files' own (`help_topics` and `game_texts`, which the import and overlays write).
+    pub fn load_with(dir: &Path, realm: &RealmText) -> Result<PackageText, PackageError> {
         let files = files_by_upper_name(dir);
         let read = |name: &str| -> Result<Vec<u8>, PackageError> {
             let path = files
@@ -494,12 +511,18 @@ impl PackageText {
                 .ok_or_else(|| error(name, format!("not in {}", dir.display())))?;
             std::fs::read(path).map_err(|e| error(name, e.to_string()))
         };
-        Self::from_files(
-            &read(HELP_FILE)?,
-            &read(WCCMMUD_FILE)?,
-            &read(WCCTEXT_FILE)?,
-            &read(DLL_TEXT_FILE)?,
-        )
+        let help = match &realm.help {
+            Some(entries) => entries.clone(),
+            None => parse_msg(HELP_FILE, &read(HELP_FILE)?)?,
+        };
+        let mut wccmmud = parse_msg(WCCMMUD_FILE, &read(WCCMMUD_FILE)?)?;
+        let mut wcctext = parse_msg(WCCTEXT_FILE, &read(WCCTEXT_FILE)?)?;
+        for e in wccmmud.iter_mut().chain(wcctext.iter_mut()) {
+            if let Some(text) = realm.texts.get(&e.key) {
+                e.value.clone_from(text);
+            }
+        }
+        Self::from_entries(&help, &wccmmud, &wcctext, &read(DLL_TEXT_FILE)?)
     }
 
     /// Parses the four files' contents.
@@ -509,16 +532,26 @@ impl PackageText {
         wcctext: &[u8],
         dll_text: &[u8],
     ) -> Result<PackageText, PackageError> {
-        let help = help_topics(&parse_msg(HELP_FILE, help)?)?;
-        let wccmmud = text_blocks(
-            WCCMMUD_FILE,
+        Self::from_entries(
+            &parse_msg(HELP_FILE, help)?,
             &parse_msg(WCCMMUD_FILE, wccmmud)?,
-            WCCMMUD_TEXTS,
-        )?;
-        let text_entries = parse_msg(WCCTEXT_FILE, wcctext)?;
-        let wcctext = text_blocks(WCCTEXT_FILE, &text_entries, WCCTEXT_TEXTS)?;
-        let editcha1 = form(&text_entries, "EDITCHA1")?;
-        let edtchan2 = form(&text_entries, "EDTCHAN2")?;
+            &parse_msg(WCCTEXT_FILE, wcctext)?,
+            dll_text,
+        )
+    }
+
+    /// [`PackageText::from_files`] on the three message files already parsed.
+    pub fn from_entries(
+        help: &[MsgEntry],
+        wccmmud: &[MsgEntry],
+        text_entries: &[MsgEntry],
+        dll_text: &[u8],
+    ) -> Result<PackageText, PackageError> {
+        let help = help_topics(help)?;
+        let wccmmud = text_blocks(WCCMMUD_FILE, wccmmud, WCCMMUD_TEXTS)?;
+        let wcctext = text_blocks(WCCTEXT_FILE, text_entries, WCCTEXT_TEXTS)?;
+        let editcha1 = form(text_entries, "EDITCHA1")?;
+        let edtchan2 = form(text_entries, "EDTCHAN2")?;
         let editcha1_screen = EditorScreen::parse(&editcha1)
             .map_err(|e| error(WCCTEXT_FILE, format!("EDITCHA1: {e}")))?;
         let mut templates = parse_dll_text(dll_text)?;
@@ -700,10 +733,18 @@ pub fn install(text: PackageText) -> bool {
 /// Loads the text from the assets directory `dir` and installs it, unless text is already
 /// installed, which is returned as it is.
 pub fn load_and_install(dir: &Path) -> Result<&'static PackageText, PackageError> {
+    load_and_install_with(dir, &RealmText::default())
+}
+
+/// [`load_and_install`] with the realm's text from the database ([`RealmText`]).
+pub fn load_and_install_with(
+    dir: &Path,
+    realm: &RealmText,
+) -> Result<&'static PackageText, PackageError> {
     if let Some(text) = INSTALLED.get() {
         return Ok(text);
     }
-    let text = PackageText::load(dir)?;
+    let text = PackageText::load_with(dir, realm)?;
     install(text);
     Ok(INSTALLED.get().expect("installed above"))
 }

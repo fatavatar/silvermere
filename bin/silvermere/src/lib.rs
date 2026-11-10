@@ -12,6 +12,7 @@ pub mod commands;
 pub mod config;
 pub mod gate;
 pub mod mme;
+pub mod realm_text;
 pub mod site;
 pub mod stock;
 pub mod store;
@@ -297,14 +298,18 @@ pub async fn serve_snapshot_in_process(
     };
     let max_sessions = u16::try_from(cfg.server.max_sessions).unwrap_or(u16::MAX);
     let mut world = World::load(cfg.game.clone(), max_sessions, snapshot)?;
+    // The realm's help, description files and game texts (filled from the assets once, for
+    // a database made before they were content).
+    let realm = realm_text::load(&db, &cfg.data_dir).await?;
     // The `FILE DESCRIPTION` room files (T-025); without them those rooms show no title.
     let assets = cfg.data_dir.join("assets");
     match silvermere_engine::display::Assets::load_dir(&assets) {
         Ok(a) => world.display.assets = a,
         Err(e) => tracing::warn!(dir = %assets.display(), "room description files not loaded: {e}"),
     }
+    realm_text::add_desc_files(&mut world.display.assets, &realm);
     // The help, the creation forms and the long screens (T-138).
-    stock::install_text(&cfg.data_dir);
+    stock::install_text(&cfg.data_dir, &realm_text::realm_text(&realm));
     serve_world_with_db(cfg, world, Some(db), clock, rng).await
 }
 

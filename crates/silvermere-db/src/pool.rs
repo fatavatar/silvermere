@@ -28,6 +28,7 @@ use crate::repo::rooms::{RoomStates, Rooms};
 use crate::repo::shops::{ShopStocks, Shops};
 use crate::repo::spells::Spells;
 use crate::repo::text_blocks::{Actions, TextBlocks};
+use crate::repo::text_content::{DescFiles, GameTexts, HelpTopics};
 use crate::{DbError, Result};
 
 /// A database: the pool and the dialect of its URL.
@@ -154,6 +155,18 @@ impl Db {
     /// Social actions (WCCACTS).
     pub fn actions(&self) -> Actions<'_> {
         Actions::new(self)
+    }
+    /// Help topics (WCCMMHLP.MSG).
+    pub fn help_topics(&self) -> HelpTopics<'_> {
+        HelpTopics::new(self)
+    }
+    /// The `FILE DESCRIPTION` files.
+    pub fn desc_files(&self) -> DescFiles<'_> {
+        DescFiles::new(self)
+    }
+    /// The game texts the realm's message files set.
+    pub fn game_texts(&self) -> GameTexts<'_> {
+        GameTexts::new(self)
     }
     /// Characters.
     pub fn characters(&self) -> Characters<'_> {

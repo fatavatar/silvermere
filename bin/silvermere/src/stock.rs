@@ -177,11 +177,12 @@ fn existing_path(dir: &Path, name: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-/// Installs the game's long text from `<data_dir>/assets/` for this process (the first
-/// install wins); logs a warning when it cannot be read.
-pub fn install_text(data_dir: &Path) {
+/// Installs the game's long text from `<data_dir>/assets/` for this process, with the
+/// realm's help and texts from the database in place of the files' own (the first install
+/// wins); logs a warning when it cannot be read.
+pub fn install_text(data_dir: &Path, realm: &silvermere_text::package::RealmText) {
     let assets = data_dir.join("assets");
-    if let Err(e) = silvermere_text::package::load_and_install(&assets) {
+    if let Err(e) = silvermere_text::package::load_and_install_with(&assets, realm) {
         tracing::warn!("the game's text is not installed: {e}");
     }
 }

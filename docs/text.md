@@ -197,7 +197,7 @@ without them gets them from the cached package at start-up. `PackageText::load` 
 |---|---|---|
 | `WCCMMUD.MSG` | the six text blocks `usrlogin`, `usrlogof`, `usrfoled`, `usrexit`, `leavemnu`, `inachup` (`USRLOGOF` and `LEAVEMNU` are unused) | the exit and inactivity texts |
 | `WCCTEXT.MSG` | the six text blocks `goodtext`, `goodpmpt`, `chsrace`, `chsclass`, `menutext`, `menupmpt`, and the full-screen forms `EDITCHA1` and `EDTCHAN2` | `goodtext`; the full-screen character editor (T-063) |
-| `WCCMMHLP.MSG` | the overview (`HL1B0`) and 131 topics | HELP |
+| `WCCMMHLP.MSG` | the overview (`HL1B0`) and 131 topics | HELP; the database's `help_topics` replace them ([import.md](import.md#help-description-files-and-game-texts)) |
 | `DLLTEXT.TXT` | the long catalogue screens of `package::MOVED_KEYS` | the main menu's About, Information and Counts screens (ANSI and plain), the SYSOP help and menu, the line-mode chart, and a few long notices |
 
 The moved catalogue entries keep their keys and arguments in `catalogue.toml`, so `Msg` still
