@@ -54,6 +54,13 @@ config). MBBSEmu's 5-minute receive timeout is not kept: idle hang-up is the eng
   and emits `SessionEvent::LineTooLong` (GSBL status 251); the engine picks the message.
 - Echo happens when the byte arrives, so type-ahead splices into output as on the original
   (see the manual check below: `Kasimir` is echoed before the `Name:` prompt it answers).
+- Output waits while a line is typed (`SessionConfig::hold_output_while_typing`, which the
+  server turns on), as on the MajorBBS/Worldgroup host: once part of a line is in the buffer,
+  the engine's output is held until the line is entered (it goes out right after the CR
+  echo), erased back to empty, or discarded as too long, or until character mode starts or
+  the session closes. More than 32 KiB held (`HELD_OUTPUT_LIMIT`) goes out at once, so a
+  half-typed line left alone cannot grow the queue. MBBSEmu wrote output between typed
+  characters; a client that sends whole lines at once (MegaMud, Majordomo) never holds.
 - `EchoMode::Secure { ch: b'*', width: 8 }` (MBBSEmu's `echsec` with `*` and 8) echoes one `*`
   per byte up to 8 and nothing beyond, and lasts one line. `EchoMode::Off` echoes nothing,
   not even the terminator.

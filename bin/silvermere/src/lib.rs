@@ -365,9 +365,11 @@ pub async fn serve_world_with_db(
     let addr: SocketAddr = cfg.server.telnet_bind.parse()?;
     let net_cfg = silvermere_net::ServerConfig {
         max_sessions: cfg.server.max_sessions as usize,
-        // the engine and the login gate send `LineStarted` for every line they take (T-094)
+        // the engine and the login gate send `LineStarted` for every line they take (T-094);
+        // output waits while a line is typed, as on the MajorBBS host
         session: silvermere_net::SessionConfig {
             hold_line_echo: true,
+            hold_output_while_typing: true,
             ..Default::default()
         },
         ..Default::default()

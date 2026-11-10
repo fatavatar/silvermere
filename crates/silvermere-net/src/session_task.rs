@@ -51,7 +51,18 @@ pub struct SessionConfig {
     /// the timers only after it (`MbbsHost.cs`:426, :458-459, :929; T-094). Off by default:
     /// a peer that never sends `LineStarted` would see each echo late.
     pub hold_line_echo: bool,
+    /// Hold output while the player is typing a line, as the MajorBBS/Worldgroup host did:
+    /// once part of a line is in the buffer, `Write` bytes wait until the line ends (they go
+    /// out right after its CR echo, which is then not held for `LineStarted`), until the
+    /// line is erased back to empty or discarded as too long, or until the session switches
+    /// to character mode or closes. More than [`HELD_OUTPUT_LIMIT`] held goes out at once.
+    /// MBBSEmu wrote output between typed characters. Off by default.
+    pub hold_output_while_typing: bool,
 }
+
+/// The most output held while a line is typed (`hold_output_while_typing`) before it is
+/// sent anyway, so a player who leaves a half-typed line does not grow the queue without end.
+pub const HELD_OUTPUT_LIMIT: usize = 32 * 1024;
 
 impl Default for SessionConfig {
     fn default() -> Self {
@@ -59,6 +70,7 @@ impl Default for SessionConfig {
             output_limit: 64 * 1024,
             heartbeat: None,
             hold_line_echo: false,
+            hold_output_while_typing: false,
         }
     }
 }
@@ -317,6 +329,8 @@ struct Session {
     hold_until: Option<Instant>,
     /// The CR echo of the line the engine has not started yet (`hold_line_echo`).
     held_echo: Vec<u8>,
+    /// Output written while a line was being typed (`hold_output_while_typing`), unescaped.
+    held_out: Vec<u8>,
     /// An rlogin session: plain bytes both ways, no telnet commands.
     raw: bool,
 }
@@ -334,6 +348,7 @@ impl Session {
             last_output: Instant::now(),
             hold_until: None,
             held_echo: Vec::new(),
+            held_out: Vec::new(),
             raw: false,
         }
     }
@@ -350,15 +365,30 @@ impl Session {
     /// One command from the engine.
     fn apply(&mut self, command: Option<SessionCommand>, close_by: &mut Option<Instant>) {
         match command {
-            Some(SessionCommand::Write(bytes)) => self.put(&bytes),
+            Some(SessionCommand::Write(bytes)) => {
+                if self.config.hold_output_while_typing && self.editor.typing() {
+                    self.held_out.extend_from_slice(&bytes);
+                    if self.held_out.len() > HELD_OUTPUT_LIMIT {
+                        self.release_output();
+                    }
+                } else {
+                    self.put(&bytes);
+                }
+            }
             Some(SessionCommand::SetEcho(mode)) => self.editor.set_echo(mode),
-            Some(SessionCommand::SetCharMode(on)) => self.editor.set_char_mode(on),
+            Some(SessionCommand::SetCharMode(on)) => {
+                self.editor.set_char_mode(on);
+                if on {
+                    self.release_output();
+                }
+            }
             Some(SessionCommand::LineStarted) => self.release_echo(),
             Some(SessionCommand::LineDone) => {
                 self.release_echo();
                 self.hold_until = None;
             }
             Some(SessionCommand::Close) | None => {
+                self.release_output();
                 self.release_echo();
                 *close_by = Some(Instant::now() + CLOSE_GRACE);
             }
@@ -368,6 +398,12 @@ impl Session {
     /// Sends the held CR echo, if any.
     fn release_echo(&mut self) {
         let held = std::mem::take(&mut self.held_echo);
+        self.put(&held);
+    }
+
+    /// Sends the output held while a line was typed, if any.
+    fn release_output(&mut self) {
+        let held = std::mem::take(&mut self.held_out);
         self.put(&held);
     }
 
@@ -431,7 +467,10 @@ impl Session {
                 };
                 let mark = echo.len();
                 self.editor.feed(b, &mut echo);
-                if self.config.hold_line_echo && self.editor.line_waiting() {
+                if !self.held_out.is_empty() && !self.editor.typing() {
+                    // the line ended (or was erased): its echo, then what waited behind it
+                    echo.append(&mut self.held_out);
+                } else if self.config.hold_line_echo && self.editor.line_waiting() {
                     // the CR echo waits for the engine to start the line
                     self.held_echo.extend(echo.drain(mark..));
                 }

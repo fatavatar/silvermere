@@ -113,6 +113,11 @@ impl LineEditor {
         &self.buf
     }
 
+    /// Whether a line is being typed: line mode, with part of a line in the buffer.
+    pub fn typing(&self) -> bool {
+        !self.char_mode && !self.buf.is_empty()
+    }
+
     /// Whether the pending queue is at its cap.
     pub fn is_full(&self) -> bool {
         self.pending.len() >= PENDING_CAP

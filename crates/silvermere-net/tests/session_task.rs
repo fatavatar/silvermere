@@ -337,3 +337,119 @@ async fn a_line_behind_a_held_one_is_taken_when_line_done_is_already_queued() {
         }
     }
 }
+
+/// A session as the server runs it: CR echo held for `LineStarted`, output held while a line
+/// is typed. Returns the client with the offers read.
+async fn typing_pair() -> (
+    TcpStream,
+    mpsc::Receiver<(SessionId, SessionEvent)>,
+    mpsc::Sender<SessionCommand>,
+) {
+    let listener = bind(LOOPBACK, &ServerConfig::default()).unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
+    let (server, _) = listener.accept().await.unwrap();
+    let (tx, mut events) = mpsc::channel(4);
+    let config = SessionConfig {
+        hold_line_echo: true,
+        hold_output_while_typing: true,
+        ..SessionConfig::default()
+    };
+    let commands = spawn_session_with(SessionId(7), server, tx, config);
+    assert!(matches!(
+        next(&mut events).await,
+        SessionEvent::Connected(_)
+    ));
+    let mut offers = [0u8; 12];
+    client.read_exact(&mut offers).await.unwrap();
+    (client, events, commands)
+}
+
+async fn read_exactly(client: &mut TcpStream, n: usize) -> Vec<u8> {
+    let mut buf = vec![0u8; n];
+    timeout(Duration::from_secs(5), client.read_exact(&mut buf))
+        .await
+        .expect("bytes in time")
+        .unwrap();
+    buf
+}
+
+/// Nothing more arrives for a little while.
+async fn quiet(client: &mut TcpStream) {
+    let mut b = [0u8; 64];
+    match timeout(Duration::from_millis(150), client.read(&mut b)).await {
+        Err(_) => {}
+        Ok(r) => panic!("unexpected bytes: {:?}", r.map(|n| b[..n].to_vec())),
+    }
+}
+
+// As on the MajorBBS host: output waits while a line is typed, and goes out after the line's
+// CR echo when it is entered.
+#[tokio::test]
+async fn output_waits_while_a_line_is_typed() {
+    let (mut client, mut events, commands) = typing_pair().await;
+    client.write_all(b"lo").await.unwrap();
+    assert_eq!(read_exactly(&mut client, 2).await, b"lo");
+    for tick in [&b"[T1]"[..], b"[T2]"] {
+        commands
+            .send(SessionCommand::Write(tick.to_vec()))
+            .await
+            .unwrap();
+    }
+    quiet(&mut client).await;
+    client.write_all(b"ok\r\n").await.unwrap();
+    assert_eq!(
+        next(&mut events).await,
+        SessionEvent::Line(b"look".to_vec())
+    );
+    // the rest of the line, its CR echo, then what was held, in order
+    assert_eq!(read_exactly(&mut client, 12).await, b"ok\r\n[T1][T2]");
+    for command in [
+        SessionCommand::LineStarted,
+        SessionCommand::Write(b"output".to_vec()),
+        SessionCommand::LineDone,
+    ] {
+        commands.send(command).await.unwrap();
+    }
+    assert_eq!(read_exactly(&mut client, 6).await, b"output");
+    // with nothing typed, output flows at once
+    commands
+        .send(SessionCommand::Write(b"[T3]".to_vec()))
+        .await
+        .unwrap();
+    assert_eq!(read_exactly(&mut client, 4).await, b"[T3]");
+}
+
+// Erasing the line back to empty lets the held output go.
+#[tokio::test]
+async fn erasing_the_line_releases_held_output() {
+    let (mut client, _events, commands) = typing_pair().await;
+    client.write_all(b"x").await.unwrap();
+    assert_eq!(read_exactly(&mut client, 1).await, b"x");
+    commands
+        .send(SessionCommand::Write(b"[T1]".to_vec()))
+        .await
+        .unwrap();
+    quiet(&mut client).await;
+    client.write_all(b"\x08").await.unwrap();
+    assert_eq!(read_exactly(&mut client, 7).await, b"\x08 \x08[T1]");
+}
+
+// A half-typed line left alone does not hold output without end.
+#[tokio::test]
+async fn held_output_goes_out_past_its_limit() {
+    use silvermere_net::HELD_OUTPUT_LIMIT;
+    let (mut client, _events, commands) = typing_pair().await;
+    client.write_all(b"x").await.unwrap();
+    assert_eq!(read_exactly(&mut client, 1).await, b"x");
+    let chunk = vec![b'a'; 1024];
+    for _ in 0..=HELD_OUTPUT_LIMIT / chunk.len() {
+        commands
+            .send(SessionCommand::Write(chunk.clone()))
+            .await
+            .unwrap();
+    }
+    let got = read_exactly(&mut client, HELD_OUTPUT_LIMIT + 1024).await;
+    assert!(got.iter().all(|&b| b == b'a'));
+}

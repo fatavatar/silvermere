@@ -18,7 +18,8 @@ pub use events::{Capabilities, Reason, SessionCommand, SessionEvent, SessionId};
 pub use line_editor::{EchoMode, EditorEvent, LineEditor};
 pub use rlogin::{RloginConfig, RloginHello};
 pub use session_task::{
-    ServerConfig, SessionConfig, bind, serve, serve_with_rlogin, spawn_session, spawn_session_with,
+    HELD_OUTPUT_LIMIT, ServerConfig, SessionConfig, bind, serve, serve_with_rlogin, spawn_session,
+    spawn_session_with,
 };
 pub use telnet::{TelnetCodec, TelnetTransport};
 pub use transport::Transport;
