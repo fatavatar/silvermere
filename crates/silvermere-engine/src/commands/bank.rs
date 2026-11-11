@@ -30,8 +30,18 @@ use crate::world::World;
 /// A deposit the bank cannot take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepositError {
-    /// The balance would wrap past an unsigned 32-bit value.
+    /// The balance would pass the most a bankbook holds ([`money_limit`]).
     Overflow,
+}
+
+/// The most copper a bankbook holds: the original's unsigned 32 bits, or with
+/// `game.wide_money` what the database's signed 64-bit column holds.
+pub fn money_limit(world: &World) -> u64 {
+    if world.config.wide_money {
+        i64::MAX as u64
+    } else {
+        u64::from(u32::MAX)
+    }
 }
 
 /// A withdrawal the bank cannot pay.
@@ -51,26 +61,27 @@ pub trait BankBooks {
     fn for_account(&self, acct: AccountId) -> Vec<&BankBook>;
     /// The balance at `bank`: 0 when there is no book, and capped to `cap` copper when
     /// `cap` is not 0.
-    fn balance_at(&mut self, acct: AccountId, bank: ShopNo, cap: u64) -> u32;
-    /// Adds `copper` to the balance unless it would wrap; makes the book (owner `userid`)
-    /// when there is none. Returns the new balance.
+    fn balance_at(&mut self, acct: AccountId, bank: ShopNo, cap: u64) -> u64;
+    /// Adds `copper` to the balance unless it would pass `limit` ([`money_limit`]); makes the
+    /// book (owner `userid`) when there is none. Returns the new balance.
     fn deposit(
         &mut self,
         acct: AccountId,
         userid: &str,
         bank: ShopNo,
-        copper: u32,
-    ) -> Result<u32, DepositError>;
+        copper: u64,
+        limit: u64,
+    ) -> Result<u64, DepositError>;
     /// Takes `copper` off the balance when the book holds enough. Returns the new balance.
     fn withdraw(
         &mut self,
         acct: AccountId,
         bank: ShopNo,
-        copper: u32,
-    ) -> Result<u32, WithdrawError>;
+        copper: u64,
+    ) -> Result<u64, WithdrawError>;
     /// A debit with no message, for the gang house tax (T-056); the same rules as
     /// [`withdraw`](Self::withdraw).
-    fn debit(&mut self, acct: AccountId, bank: ShopNo, copper: u32) -> Result<u32, WithdrawError> {
+    fn debit(&mut self, acct: AccountId, bank: ShopNo, copper: u64) -> Result<u64, WithdrawError> {
         self.withdraw(acct, bank, copper)
     }
 }
@@ -90,12 +101,12 @@ impl BankBooks for HashMap<(AccountId, ShopNo), BankBook> {
         books
     }
 
-    fn balance_at(&mut self, acct: AccountId, bank: ShopNo, cap: u64) -> u32 {
+    fn balance_at(&mut self, acct: AccountId, bank: ShopNo, cap: u64) -> u64 {
         let Some(book) = self.get_mut(&(acct, bank)) else {
             return 0;
         };
-        if cap > 0 && u64::from(book.balance) > cap {
-            book.balance = u32::try_from(cap).unwrap_or(u32::MAX);
+        if cap > 0 && book.balance > cap {
+            book.balance = cap;
         }
         book.balance
     }
@@ -105,10 +116,14 @@ impl BankBooks for HashMap<(AccountId, ShopNo), BankBook> {
         acct: AccountId,
         userid: &str,
         bank: ShopNo,
-        copper: u32,
-    ) -> Result<u32, DepositError> {
+        copper: u64,
+        limit: u64,
+    ) -> Result<u64, DepositError> {
         let have = self.get(&(acct, bank)).map_or(0, |b| b.balance);
-        let balance = have.checked_add(copper).ok_or(DepositError::Overflow)?;
+        let balance = have
+            .checked_add(copper)
+            .filter(|b| *b <= limit)
+            .ok_or(DepositError::Overflow)?;
         let book = self.entry((acct, bank)).or_insert_with(|| BankBook {
             userid: userid.to_string(),
             bank,
@@ -123,8 +138,8 @@ impl BankBooks for HashMap<(AccountId, ShopNo), BankBook> {
         &mut self,
         acct: AccountId,
         bank: ShopNo,
-        copper: u32,
-    ) -> Result<u32, WithdrawError> {
+        copper: u64,
+    ) -> Result<u64, WithdrawError> {
         let book = self.get_mut(&(acct, bank)).ok_or(WithdrawError::NoBook)?;
         if book.balance < copper {
             return Err(WithdrawError::Short);
@@ -149,12 +164,20 @@ pub fn bank_here(world: &World, id: SessionId) -> Option<ShopNo> {
 }
 
 /// The amount typed: more than nine characters counts as 0 (so the long cannot overflow),
-/// otherwise `leading_int32`, stored in an unsigned long.
-fn amount_of(word: &str) -> u32 {
+/// otherwise `leading_int32`, stored in an unsigned long. With `wide` (`game.wide_money`) up
+/// to eighteen characters are read, and a negative amount is 0.
+fn amount_of(word: &str, wide: bool) -> u64 {
+    if wide {
+        return if word.len() > 18 {
+            0
+        } else {
+            u64::try_from(leading_int(word)).unwrap_or(0)
+        };
+    }
     if word.len() > 9 {
         0
     } else {
-        leading_int(word) as i32 as u32
+        u64::from(leading_int(word) as i32 as u32)
     }
 }
 
@@ -199,7 +222,7 @@ fn cmd_banking(world: &mut World, id: SessionId, line: &CommandLine, way: Way) -
         plr.status.remove(PlayerStatus::SNEAKING);
         plr.hidden = 0;
     }
-    let amount = amount_of(line.arg(1));
+    let amount = amount_of(line.arg(1), world.config.wide_money);
     if amount == 0 {
         push(world, id, Msg::BankReasonable);
         return Handled::Done;
@@ -264,9 +287,11 @@ fn persist_book(world: &mut World, acct: AccountId, bank: ShopNo) {
 
 /// A deposit. Nothing happens, and nothing is shown, when the purse cannot pay; a balance
 /// that would wrap is refused with a line and the coins stay.
-fn deposit_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u32) {
+fn deposit_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u64) {
     let currency = world.config.usr_cur_name.clone();
     let cap = world.config.maximum_bank_balance;
+    let wide = world.config.wide_money;
+    let limit = money_limit(world);
     let Some(s) = world.sessions.get(&id) else {
         return;
     };
@@ -274,15 +299,23 @@ fn deposit_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u32) {
         return;
     };
     let (acct, userid) = (acct.id, acct.username.clone());
-    if !economy::can_pay(plr.coins, amount) {
+    // the original's amounts fit 32 bits (nine digits at most)
+    let pay = |coins| {
+        if wide {
+            economy::pay_wide(coins, amount)
+        } else {
+            economy::pay(coins, u32::try_from(amount).unwrap_or(u32::MAX))
+        }
+    };
+    if pay(plr.coins).is_none() {
         return;
     }
     world.bank_books.balance_at(acct, bank, cap);
-    let msg = match world.bank_books.deposit(acct, &userid, bank, amount) {
+    let msg = match world.bank_books.deposit(acct, &userid, bank, amount, limit) {
         Ok(_) => {
             let plr = world.session_mut(id).and_then(|s| s.character.as_mut());
             let Some(plr) = plr else { return };
-            let paid = economy::pay(plr.coins, amount).expect("can_pay was checked");
+            let paid = pay(plr.coins).expect("checked above");
             plr.coins = paid.left;
             persist_book(world, acct, bank);
             Msg::BankDeposit {
@@ -297,8 +330,9 @@ fn deposit_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u32) {
 
 /// A withdrawal. Nothing happens, and nothing is shown, when there is no bankbook here or
 /// it holds less than the amount.
-fn withdraw_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u32) {
+fn withdraw_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u64) {
     let cap = world.config.maximum_bank_balance;
+    let wide = world.config.wide_money;
     let Some(acct) = world
         .session(id)
         .and_then(|s| s.account.as_ref())
@@ -307,11 +341,24 @@ fn withdraw_gold(world: &mut World, id: SessionId, bank: ShopNo, amount: u32) {
         return;
     };
     world.bank_books.balance_at(acct, bank, cap);
+    // with wide money the coins come as the fewest coins, and a purse that cannot hold them
+    // (a coin count past 32 bits) takes nothing
+    let paid_out = match world.session(id).and_then(|s| s.player()) {
+        Some(plr) if wide => match economy::add_copper_wide(plr.coins, amount) {
+            Some(coins) => Some(coins),
+            None => return,
+        },
+        _ => None,
+    };
     if world.bank_books.withdraw(acct, bank, amount).is_err() {
         return;
     }
     if let Some(plr) = world.session_mut(id).and_then(|s| s.character.as_mut()) {
-        plr.coins.copper = plr.coins.copper.wrapping_add(amount);
+        match paid_out {
+            Some(coins) => plr.coins = coins,
+            // the original's amounts fit 32 bits (nine digits at most)
+            None => plr.coins.copper = plr.coins.copper.wrapping_add(amount as u32),
+        }
     }
     persist_book(world, acct, bank);
     push(
@@ -401,22 +448,40 @@ mod tests {
 
     #[test]
     fn amounts_read_leading_digits_with_a_nine_digit_limit() {
-        assert_eq!(amount_of("523"), 523);
-        assert_eq!(amount_of("12abc"), 12);
-        assert_eq!(amount_of("999999999"), 999_999_999);
-        assert_eq!(amount_of("1000000000"), 0);
-        assert_eq!(amount_of("x"), 0);
-        assert_eq!(amount_of("-1"), u32::MAX);
+        assert_eq!(amount_of("523", false), 523);
+        assert_eq!(amount_of("12abc", false), 12);
+        assert_eq!(amount_of("999999999", false), 999_999_999);
+        assert_eq!(amount_of("1000000000", false), 0);
+        assert_eq!(amount_of("x", false), 0);
+        assert_eq!(amount_of("-1", false), u64::from(u32::MAX));
+    }
+
+    // game.wide_money: eighteen digits, and a negative amount is none
+    #[test]
+    fn wide_amounts_read_up_to_eighteen_digits() {
+        assert_eq!(amount_of("1000000000", true), 1_000_000_000);
+        assert_eq!(
+            amount_of("999999999999999999", true),
+            999_999_999_999_999_999
+        );
+        assert_eq!(amount_of("1000000000000000000", true), 0);
+        assert_eq!(amount_of("-1", true), 0);
     }
 
     #[test]
     fn deposit_and_withdraw_limits() {
         let mut b: HashMap<(AccountId, ShopNo), BankBook> = HashMap::new();
+        let max = u64::from(u32::MAX);
         assert_eq!(b.withdraw(ACCT, BANK, 1), Err(WithdrawError::NoBook));
-        assert_eq!(b.deposit(ACCT, "ANN", BANK, u32::MAX), Ok(u32::MAX));
-        assert_eq!(b.deposit(ACCT, "ANN", BANK, 1), Err(DepositError::Overflow));
-        assert_eq!(b.book(ACCT, BANK).unwrap().balance, u32::MAX);
-        assert_eq!(b.withdraw(ACCT, BANK, u32::MAX), Ok(0));
+        assert_eq!(b.deposit(ACCT, "ANN", BANK, max, max), Ok(max));
+        assert_eq!(
+            b.deposit(ACCT, "ANN", BANK, 1, max),
+            Err(DepositError::Overflow)
+        );
+        assert_eq!(b.book(ACCT, BANK).unwrap().balance, max);
+        // with wide money the book takes it
+        assert_eq!(b.deposit(ACCT, "ANN", BANK, 1, u64::MAX), Ok(max + 1));
+        assert_eq!(b.withdraw(ACCT, BANK, max + 1), Ok(0));
         assert_eq!(b.withdraw(ACCT, BANK, 1), Err(WithdrawError::Short));
         assert_eq!(b.balance_at(ACCT, ShopNo(9), 0), 0);
     }
@@ -425,9 +490,10 @@ mod tests {
     fn books_list_in_bank_order() {
         let mut b: HashMap<(AccountId, ShopNo), BankBook> = HashMap::new();
         for n in [9, 7, 12] {
-            b.deposit(ACCT, "ANN", ShopNo(n), 1).unwrap();
+            b.deposit(ACCT, "ANN", ShopNo(n), 1, u64::MAX).unwrap();
         }
-        b.deposit(AccountId(2), "BOB", ShopNo(1), 1).unwrap();
+        b.deposit(AccountId(2), "BOB", ShopNo(1), 1, u64::MAX)
+            .unwrap();
         let banks: Vec<i32> = b.for_account(ACCT).iter().map(|k| k.bank.0).collect();
         assert_eq!(banks, [7, 9, 12]);
     }

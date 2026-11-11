@@ -141,6 +141,15 @@ between the targets of an area spell. A realm that ran on Worldgroup should turn
 list, with each place's address in the module, is in
 `crates/silvermere-engine/src/worldgroup.rs`.
 
+`game.wide_money` (off by default) lifts the money limits both modules share. The original keeps
+money as unsigned 32-bit copper: a bankbook holds at most 4,294,967,295 copper (about 4,294
+runic coins), DEPOSIT and WITHDRAW read at most nine digits (999,999,999 copper), and a purse
+worth more than 32 bits of copper is valued by the original's wrapping rules, so it may be
+refused a deposit it can pay. With it on, balances and purse values are counted in 64 bits (up
+to 9,223,372,036,854,775,807 copper, what the database's column holds), the amounts take up to
+eighteen digits, and a withdrawal comes as the fewest coins rather than as copper. Turning it off
+again caps nothing already in a bankbook: a balance past 32 bits stays and can be withdrawn.
+
 ## Kept exact
 
 These match the original and are checked against it.

@@ -467,7 +467,7 @@ pub fn bank_book(seq: &mut Seq, userid: &str, bank: i32) -> BankBook {
     BankBook {
         userid: userid.to_string(),
         bank: ShopNo(bank),
-        balance: s.u32(),
+        balance: u64::from(s.u32()),
         loan: s.u32(),
     }
 }

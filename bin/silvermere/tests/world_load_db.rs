@@ -73,7 +73,9 @@ async fn bank_books_survive_a_restart() {
     assert_eq!(world.bank_books.balance_at(acct, ShopNo(9), 0), 40);
     // a deposit after the restart adds to the stored balance
     assert_eq!(
-        world.bank_books.deposit(acct, "ANN", ShopNo(7), 77),
+        world
+            .bank_books
+            .deposit(acct, "ANN", ShopNo(7), 77, u64::from(u32::MAX)),
         Ok(600)
     );
 }

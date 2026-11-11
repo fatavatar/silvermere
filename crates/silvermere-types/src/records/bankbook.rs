@@ -12,8 +12,9 @@ pub struct BankBook {
     pub userid: String,
     /// +0x01E the bank's shop number (key 0 part 2).
     pub bank: ShopNo,
-    /// +0x022 money on deposit.
-    pub balance: u32,
+    /// +0x022 money on deposit, in copper (32 bits in the file; up to 64 with
+    /// `game.wide_money`).
+    pub balance: u64,
     /// +0x026 money owed.
     pub loan: u32,
 }

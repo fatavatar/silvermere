@@ -449,7 +449,7 @@ pub fn collect_tax(world: &mut World, gh: &mut [HouseLedger; GH_WHITE + 1]) {
             .leader_account
             .and_then(|a| world.bank_books.get_mut(&(a, TAX_BANK)).map(|b| (a, b)));
         let paid = match book {
-            Some((_, b)) if h.tax > u64::from(b.balance) => {
+            Some((_, b)) if h.tax > b.balance => {
                 tracing::info!(target: "mmlog",
                     "GANGHOUSE : Gang leader {} couldn't pay his gang house tax. BALANCE {}. ",
                     b.userid, b.balance);
@@ -457,7 +457,7 @@ pub fn collect_tax(world: &mut World, gh: &mut [HouseLedger; GH_WHITE + 1]) {
             }
             Some((acct, b)) => {
                 let old = b.balance;
-                b.balance -= h.tax as u32;
+                b.balance -= h.tax;
                 tracing::info!(target: "mmlog",
                     "GANGHOUSE : Leader {} paid house tax. OLD SILVERMERE BALANCE {old} NEW BALANCE {}. ",
                     b.userid, b.balance);

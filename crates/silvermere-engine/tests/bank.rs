@@ -190,7 +190,7 @@ fn purse(h: &Harness, id: SessionId) -> Coins {
     h.plr(id).coins
 }
 
-fn balance(h: &Harness, id: SessionId, bank: ShopNo) -> Option<u32> {
+fn balance(h: &Harness, id: SessionId, bank: ShopNo) -> Option<u64> {
     let acct = h
         .engine
         .world
@@ -468,7 +468,7 @@ fn a_balance_never_wraps() {
         BankBook {
             userid: "ANN".into(),
             bank: BANK,
-            balance: u32::MAX - 10,
+            balance: u64::from(u32::MAX) - 10,
             loan: 0,
         },
     );
@@ -479,12 +479,12 @@ fn a_balance_never_wraps() {
     );
     // the coins stay, but the purse is still tidied up: 50 copper is 5 silver
     assert_eq!(purse(&h, id), coins(0, 0, 0, 5, 0));
-    assert_eq!(balance(&h, id, BANK), Some(u32::MAX - 10));
+    assert_eq!(balance(&h, id, BANK), Some(u64::from(u32::MAX) - 10));
     assert!(
         h.line(id, "deposit 10")
             .starts_with("You deposit 1 silver noble.")
     );
-    assert_eq!(balance(&h, id, BANK), Some(u32::MAX));
+    assert_eq!(balance(&h, id, BANK), Some(u64::from(u32::MAX)));
 }
 
 #[test]
@@ -562,7 +562,8 @@ fn purse_plus_balance_is_conserved() {
     let id = h.player("Ann");
     h.plr_mut(id).coins = coins(1, 3, 12, 4, 77);
     let total = |h: &Harness| {
-        silvermere_rules::economy::to_copper(purse(h, id)) + balance(h, id, BANK).unwrap_or(0)
+        u64::from(silvermere_rules::economy::to_copper(purse(h, id)))
+            + balance(h, id, BANK).unwrap_or(0)
     };
     let start = total(&h);
     let mut x: u32 = 12345;
@@ -573,4 +574,65 @@ fn purse_plus_balance_is_conserved() {
         h.line(id, &format!("{cmd} {amount}"));
         assert_eq!(total(&h), start, "{cmd} {amount}");
     }
+}
+
+/// `game.wide_money`: a purse worth more than 32 bits of copper is valued exactly, amounts of
+/// ten digits and more move, and a bankbook holds more than 4,294,967,295 copper.
+#[test]
+fn wide_money_lifts_the_32_bit_limits() {
+    let mut h = Harness::with(|w| {
+        bank_world(w);
+        w.config.wide_money = true;
+    });
+    let id = h.player("Ann");
+    // 15,309 runic: 15,309,000,000 copper, which wraps 32 bits
+    h.plr_mut(id).coins = coins(15_309, 0, 0, 0, 0);
+    assert!(
+        h.line(id, "deposit 9000000000")
+            .starts_with("You deposit 9000 runic coins."),
+        "a ten-digit deposit"
+    );
+    assert_eq!(purse(&h, id), coins(6_309, 0, 0, 0, 0));
+    assert_eq!(balance(&h, id, BANK), Some(9_000_000_000));
+    h.line(id, "deposit 6000000000");
+    assert_eq!(balance(&h, id, BANK), Some(15_000_000_000));
+    // a withdrawal comes as the fewest coins
+    assert!(
+        h.line(id, "withdraw 2500000050")
+            .starts_with("You withdrew 2500000050 copper farthings.")
+    );
+    assert_eq!(purse(&h, id), coins(2_809, 0, 0, 5, 0));
+    assert_eq!(balance(&h, id, BANK), Some(12_499_999_950));
+    // the bankbook shows the whole balance
+    let shown = h.line(id, "bankbook");
+    assert!(shown.contains("12499999950 copper farthings"), "{shown}");
+    assert!(shown.contains("124,999,999.50 gold crowns"), "{shown}");
+    // more than is there, or nineteen digits: nothing moves
+    assert_eq!(h.line(id, "withdraw 12500000000"), PROMPT);
+    assert_eq!(
+        h.line(id, "withdraw 1000000000000000000"),
+        format!("Please specify a more reasonable amount.\n{PROMPT}")
+    );
+    assert_eq!(balance(&h, id, BANK), Some(12_499_999_950));
+}
+
+/// Off (the original): the same purse and amounts meet the 32-bit limits.
+#[test]
+fn without_wide_money_the_original_limits_hold() {
+    let mut h = bank();
+    let id = h.player("Ann");
+    h.plr_mut(id).coins = coins(4_000, 0, 0, 0, 0);
+    assert_eq!(
+        h.line(id, "deposit 9000000000"),
+        format!("Please specify a more reasonable amount.\n{PROMPT}")
+    );
+    assert!(h.line(id, "deposit 999999999").starts_with("You deposit"));
+    assert!(h.line(id, "deposit 999999999").starts_with("You deposit"));
+    assert!(h.line(id, "deposit 999999999").starts_with("You deposit"));
+    assert_eq!(balance(&h, id, BANK), Some(2_999_999_997));
+    // a purse worth more than 32 bits of copper is valued as the original did: 4,295 runic
+    // (4,295,000,000 copper) wraps and counts as 429,500,000, so half a billion cannot be paid
+    h.plr_mut(id).coins = coins(4_295, 0, 0, 0, 0);
+    assert_eq!(h.line(id, "deposit 500000000"), PROMPT);
+    assert_eq!(balance(&h, id, BANK), Some(2_999_999_997));
 }

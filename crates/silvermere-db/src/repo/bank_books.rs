@@ -26,7 +26,8 @@ fn args(account: AccountId, book: &BankBook) -> Args {
     a.add(account.0)
         .add(&book.userid)
         .add(book.bank.0)
-        .add(book.balance)
+        // a balance is a BIGINT (signed); the engine never holds more than fits
+        .add(i64::try_from(book.balance).unwrap_or(i64::MAX))
         .add(book.loan);
     a
 }
