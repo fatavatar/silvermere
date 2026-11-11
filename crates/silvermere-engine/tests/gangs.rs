@@ -966,7 +966,7 @@ mod gang {
         let book = &h.w().bank_books[&(AccountId(5), gangs::GANGBANK)];
         // the price paid (the cost is deposited): 12 silver, no markup, Charm 0
         let paid = silvermere_rules::economy::buy_price(12, Currency::Silver, 0, 0) as u32;
-        assert_eq!(book.balance, 100 + paid);
+        assert_eq!(book.balance, 100 + u64::from(paid));
         let s = h.w().shops[&GANG_SHOP].stock[0];
         assert_eq!((s.item, s.qty), (ItemNo(0), 0));
         assert!(h.log.iter().any(|o| matches!(

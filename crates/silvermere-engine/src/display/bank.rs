@@ -10,7 +10,7 @@ use crate::commands::bank::BankBooks;
 use crate::world::World;
 
 /// `1234567` as `1,234,567`.
-pub fn format_number_with_commas(number: u32) -> String {
+pub fn format_number_with_commas(number: u64) -> String {
     let digits = number.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
@@ -24,7 +24,7 @@ pub fn format_number_with_commas(number: u32) -> String {
 
 /// The singular for exactly one coin, otherwise the plural (also for none). `cur` is the
 /// `CUR_*` index (copper 0, gold 2).
-pub fn proper_currency_name(amount: u32, cur: usize) -> &'static str {
+pub fn proper_currency_name(amount: u64, cur: usize) -> &'static str {
     if amount == 1 {
         CURRENCY_NAMES_SINGULAR[cur]
     } else {
@@ -115,7 +115,10 @@ mod tests {
         assert_eq!(format_number_with_commas(999), "999");
         assert_eq!(format_number_with_commas(1000), "1,000");
         assert_eq!(format_number_with_commas(1_234_567), "1,234,567");
-        assert_eq!(format_number_with_commas(u32::MAX), "4,294,967,295");
+        assert_eq!(
+            format_number_with_commas(u64::from(u32::MAX)),
+            "4,294,967,295"
+        );
     }
 
     #[test]

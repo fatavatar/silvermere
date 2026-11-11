@@ -177,6 +177,90 @@ pub fn pay(coins: Coins, price: u32) -> Option<Payment> {
     Some(Payment { paid, left })
 }
 
+/// The value of `coins` in copper, exactly, in 64 bits (`game.wide_money`): no coin count
+/// can wrap it, unlike [`to_copper`].
+pub fn to_copper_wide(coins: Coins) -> u64 {
+    u64::from(coins.runic) * u64::from(CPRUNIC)
+        + u64::from(coins.platinum) * u64::from(CPPLAT)
+        + u64::from(coins.gold) * u64::from(CPGOLD)
+        + u64::from(coins.silver) * u64::from(COPPERPERSILV)
+        + u64::from(coins.copper)
+}
+
+/// [`pay`] in 64 bits (`game.wide_money`): `price` copper by value with whole coins, the
+/// largest first, breaking one coin into the next type down when nothing left fits. `None`
+/// when the purse is worth less ([`to_copper_wide`]); then nothing is taken.
+pub fn pay_wide(coins: Coins, price: u64) -> Option<Payment> {
+    if price > to_copper_wide(coins) {
+        return None;
+    }
+    // Pay up to `have` coins worth `unit` each, while one still fits.
+    fn take(amount: &mut u64, have: &mut u32, paid: &mut u32, unit: u32) {
+        let n = (*amount / u64::from(unit)).min(u64::from(*have));
+        *amount -= n * u64::from(unit);
+        // n is at most `have`, a u32
+        let n = n as u32;
+        *have -= n;
+        *paid += n;
+    }
+    let mut left = coins;
+    let mut paid = Coins::default();
+    let mut amount = price;
+    loop {
+        take(&mut amount, &mut left.runic, &mut paid.runic, CPRUNIC);
+        take(&mut amount, &mut left.platinum, &mut paid.platinum, CPPLAT);
+        take(&mut amount, &mut left.gold, &mut paid.gold, CPGOLD);
+        take(
+            &mut amount,
+            &mut left.silver,
+            &mut paid.silver,
+            COPPERPERSILV,
+        );
+        take(&mut amount, &mut left.copper, &mut paid.copper, 1);
+        if amount == 0 {
+            break;
+        }
+        // Break the smallest coin there is into the next type down (whatever is still owed
+        // is less than that coin, so the change fits beside the coins of that type).
+        if left.silver > 0 {
+            left.copper = left.copper.saturating_add(COPPERPERSILV);
+            left.silver -= 1;
+        } else if left.gold > 0 {
+            left.silver = left.silver.saturating_add(SILVPERGOLD);
+            left.gold -= 1;
+        } else if left.platinum > 0 {
+            left.gold = left.gold.saturating_add(GOLDPERPLAT);
+            left.platinum -= 1;
+        } else if left.runic > 0 {
+            left.platinum = left.platinum.saturating_add(PLATPERRUNIC);
+            left.runic -= 1;
+        } else {
+            break;
+        }
+    }
+    Some(Payment { paid, left })
+}
+
+/// `copper` added to `coins` as the fewest coins (`game.wide_money`'s withdrawal): runic,
+/// platinum, gold, silver and copper. `None`, and nothing added, when a coin count would pass
+/// its 32 bits.
+pub fn add_copper_wide(coins: Coins, copper: u64) -> Option<Coins> {
+    let mut out = coins;
+    let mut rest = copper;
+    for (count, unit) in [
+        (&mut out.runic, CPRUNIC),
+        (&mut out.platinum, CPPLAT),
+        (&mut out.gold, CPGOLD),
+        (&mut out.silver, COPPERPERSILV),
+        (&mut out.copper, 1),
+    ] {
+        let n = u32::try_from(rest / u64::from(unit)).ok()?;
+        *count = count.checked_add(n)?;
+        rest %= u64::from(unit);
+    }
+    Some(out)
+}
+
 /// The price in copper of an item costing `cost` in `currency` at a shop with `markup`
 /// percent, for a buyer with Charm `cha`:
 ///

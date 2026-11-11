@@ -701,7 +701,7 @@ pub fn sell_item(world: &mut World, id: SessionId, shopnum: ShopNo, name: &str, 
         return;
     }
     let price = economy::sell_price(itm.cost, itm.currency, plr.cha) as u32;
-    let coin = proper_currency_name(price, 0).to_string();
+    let coin = proper_currency_name(u64::from(price), 0).to_string();
     if appraise {
         let msg = Msg::ShopAppraise {
             n: price,

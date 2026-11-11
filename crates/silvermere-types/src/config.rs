@@ -110,6 +110,10 @@ pub struct GameConfig {
     /// DOS one: numbers DOS keeps in a 16-bit `int` are 32-bit, and an unsigned 16-bit field
     /// compares signed. Off is the DOS module. See `silvermere_engine::worldgroup`.
     pub worldgroup_module: bool,
+    /// Money beyond the original's 32-bit limits: bank balances and the value of a purse are
+    /// counted in 64 bits, and DEPOSIT and WITHDRAW take amounts of up to 18 digits. Off is
+    /// the original: at most 4,294,967,295 copper a bank and 9 digits typed.
+    pub wide_money: bool,
     /// `GENDERGO`: gold to change gender. -1..=32000.
     pub gender_gold: i32,
     /// `ENABLAWF`: players may choose Lawful.
@@ -263,6 +267,7 @@ impl Default for GameConfig {
             light_evy: true,
             published_dll_edits: false,
             worldgroup_module: false,
+            wide_money: false,
             gender_gold: 0,
             enable_lawful: true,
             ep_cycle: 60,

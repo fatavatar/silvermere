@@ -2260,7 +2260,7 @@ note = "The balance would wrap past an unsigned 32-bit value; the coins stay in 
 [messages.bank_withdraw]
 text = "{@ANSI_CLRLINE}{@ANSI_CYAN}You withdrew {amount} {coin}.\r"
 pattern = "bank_withdraw"
-args = { amount = "u32" }
+args = { amount = "u64" }
 example = { amount = "5", coin = "gold crowns" }
 note = "The coin is always the copper name (proper_currency_name); the example is the registry's literal, which the pattern test compares."
 [messages.bank_see_deposit]
@@ -2291,7 +2291,7 @@ text = "{@ANSI_LTREDBLK}You cannot WITHDRAW if you are not in a bank!\r"
 [messages.bank_balance]
 text = "{@ANSI_CLRLINE}Your balance at {bank} (#{num}) is:\rOn deposit: {copper} {copper_name} [{@ANSI_WHITE}{gold} {@ANSI_RESET}{gold_name}]\r"
 pattern = "bank_balance"
-args = { num = "i64", copper = "u32" }
+args = { num = "i64", copper = "u64" }
 example = { bank = "First Bank", num = "7", copper = "523", copper_name = "copper farthings", gold = "5.23", gold_name = "gold crowns" }
 note = "Sent as one piece for both lines. `gold` is `format_number_with_commas(balance/100)`, a point and the two-digit remainder (one argument, to keep `Msg` small); the single space before the reset is inside the colour."
 

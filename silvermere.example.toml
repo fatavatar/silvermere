@@ -69,6 +69,7 @@ keep_exp = false
 light_evy = true
 published_dll_edits = false
 worldgroup_module = false
+wide_money = false
 gender_gold = 0   # -1..=32000; GENDERGO
 enable_lawful = true
 ep_cycle = 60   # 15..=360; EPCYCLE

@@ -23,7 +23,7 @@ pub fn to_bank_book(r: &BankbookRecord) -> BankBook {
     BankBook {
         userid: r.userid.trimmed(),
         bank: ShopNo(r.bank),
-        balance: r.balance,
+        balance: u64::from(r.balance),
         loan: r.loan,
     }
 }

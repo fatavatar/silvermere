@@ -306,14 +306,20 @@ pub fn deposit_gangleaders_account(world: &mut World, id: SessionId, shop: ShopN
         .filter(|((_, bank), b)| *bank == GANGBANK && eq_ignore_case(&b.userid, &owner))
         .map(|((account, _), _)| *account)
         .min();
+    let limit = crate::commands::bank::money_limit(world);
     match book {
         Some(account) => {
             let b = world
                 .bank_books
                 .get_mut(&(account, GANGBANK))
                 .expect("found above");
-            if b.balance.wrapping_add(amount) > b.balance {
-                b.balance += amount;
+            // the original's balance wraps past 32 bits; `game.wide_money` holds 64
+            if amount > 0
+                && b.balance
+                    .checked_add(u64::from(amount))
+                    .is_some_and(|n| n <= limit)
+            {
+                b.balance += u64::from(amount);
                 let book = b.clone();
                 world
                     .outbox

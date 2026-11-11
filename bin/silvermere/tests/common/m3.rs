@@ -348,7 +348,7 @@ pub async fn stored(url: &str, name: &str) -> silvermere_types::records::Charact
 }
 
 /// The balance of `user`'s book at bank `bank` (`None` before the first deposit).
-pub async fn stored_balance(url: &str, user: &str, bank: i32) -> Option<u32> {
+pub async fn stored_balance(url: &str, user: &str, bank: i32) -> Option<u64> {
     let db = Db::connect_and_migrate(url).await.unwrap();
     let acct = db
         .accounts()
