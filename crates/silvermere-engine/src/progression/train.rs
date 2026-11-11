@@ -80,7 +80,7 @@ pub fn train_level(world: &mut World, id: SessionId) -> bool {
     // The fee
     let cost = training_fee_copper(plr.level, markup);
     let price = u32::try_from(cost).unwrap_or(u32::MAX);
-    let Some(payment) = economy::pay(plr.coins, price) else {
+    let Some(payment) = economy::pay_in(world.config.wide_money, plr.coins, price) else {
         return refuse(world, id, Msg::TrainNoMoney);
     };
     let paid = coin_list(world, payment.paid);

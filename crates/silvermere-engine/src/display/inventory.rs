@@ -1,7 +1,7 @@
 //! INVENTORY, KEYS and WEALTH: [`display_inventory_items`], [`display_users_keys`] and
 //! [`display_user_money`].
 
-use silvermere_rules::economy::{EncumbranceLevel, to_copper};
+use silvermere_rules::economy::EncumbranceLevel;
 use silvermere_text::{Msg, ansi};
 use silvermere_types::enums::{Currency, ItemType, WeaponType};
 use silvermere_types::ids::{ItemNo, SessionId};
@@ -161,7 +161,7 @@ pub fn display_inventory_items(world: &mut World, shown: SessionId, to: SessionI
     });
     msgs.push(keys_msg(world, plr, true));
     msgs.push(Msg::InvWealth {
-        copper: to_copper(plr.coins),
+        copper: silvermere_rules::economy::purse_value(world.config.wide_money, plr.coins),
         name: copper_name(),
     });
     // The items' weight plus the coins' over the maximum weight printed as an `int`: both
@@ -219,7 +219,7 @@ pub fn display_user_money(world: &mut World, id: SessionId) -> bool {
             coins: words.join(", "),
         });
         msgs.push(Msg::InvWealth {
-            copper: to_copper(plr.coins),
+            copper: silvermere_rules::economy::purse_value(world.config.wide_money, plr.coins),
             name: copper_name(),
         });
     }

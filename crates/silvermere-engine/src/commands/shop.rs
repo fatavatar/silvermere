@@ -254,7 +254,7 @@ fn hospital(world: &mut World, id: SessionId, name: &str) -> bool {
             i32::from(fee as i16)
         };
         let price = economy::convert_currency(0, 0, 0, 0, fee as u32);
-        let Some(paid) = economy::pay(plr.coins, price) else {
+        let Some(paid) = economy::pay_in(world.config.wide_money, plr.coins, price) else {
             tell_user(world, id, Msg::ShopHealPoor);
             return true;
         };
@@ -271,7 +271,7 @@ fn hospital(world: &mut World, id: SessionId, name: &str) -> bool {
         // 25 silver nobles, or 15 when he was not poisoned after all
         let fee = if poisoned { 25 } else { 15 };
         let price = economy::convert_currency(0, 0, 0, fee, 0);
-        let Some(paid) = economy::pay(plr.coins, price) else {
+        let Some(paid) = economy::pay_in(world.config.wide_money, plr.coins, price) else {
             tell_user(world, id, Msg::ShopCurePoor);
             return true;
         };
@@ -528,7 +528,7 @@ pub fn buy_item(world: &mut World, id: SessionId, shopnum: ShopNo, name: &str) {
     // the price in copper, then the purse
     let result = result.and_then(|sale| {
         let cost = economy::buy_price(sale.price, sale.currency, shop.markup, plr.cha) as u32;
-        if economy::can_pay(plr.coins, cost) {
+        if economy::can_pay_in(world.config.wide_money, plr.coins, cost) {
             Ok((sale, cost))
         } else {
             // cannot pay: the shelf copy goes back
@@ -572,11 +572,12 @@ pub fn buy_item(world: &mut World, id: SessionId, shopnum: ShopNo, name: &str) {
         },
     );
     let currency = world.config.usr_cur_name.clone();
+    let wide = world.config.wide_money;
     let paid = world
         .session_mut(id)
         .and_then(|s| s.character.as_mut())
         .and_then(|plr| {
-            let paid = economy::pay(plr.coins, cost)?;
+            let paid = economy::pay_in(wide, plr.coins, cost)?;
             plr.coins = paid.left;
             Some(paid.paid)
         })

@@ -615,6 +615,7 @@ pub fn apply(world: &mut World, id: SessionId, change: Change) -> Handled {
 fn gender(world: &mut World, id: SessionId, sex: u8) -> Handled {
     let gold = world.config.gender_gold;
     let currency = world.config.usr_cur_name.clone();
+    let wide = world.config.wide_money;
     let Some(s) = world.session_mut(id) else {
         return Handled::NotCommand;
     };
@@ -626,7 +627,7 @@ fn gender(world: &mut World, id: SessionId, sex: u8) -> Handled {
         return Handled::Done;
     };
     let price = economy::convert_currency(0, 0, gold, 0, 0);
-    if !economy::can_pay(plr.coins, price) {
+    if !economy::can_pay_in(wide, plr.coins, price) {
         s.output.push(Msg::SetCannotAfford);
         return Handled::Done;
     }
@@ -644,7 +645,7 @@ fn gender(world: &mut World, id: SessionId, sex: u8) -> Handled {
         s.output.push(Msg::SetGenderFree { gender });
         return Handled::Done;
     }
-    let paid = match economy::pay(plr.coins, price) {
+    let paid = match economy::pay_in(wide, plr.coins, price) {
         Some(p) => {
             plr.coins = p.left;
             p.paid
