@@ -241,6 +241,35 @@ pub fn pay_wide(coins: Coins, price: u64) -> Option<Payment> {
     Some(Payment { paid, left })
 }
 
+/// Whether `coins` can pay `price` copper, valued as the original does ([`to_copper`]) or,
+/// with `wide` (`game.wide_money`), exactly ([`to_copper_wide`]).
+pub fn can_pay_in(wide: bool, coins: Coins, price: u32) -> bool {
+    if wide {
+        u64::from(price) <= to_copper_wide(coins)
+    } else {
+        can_pay(coins, price)
+    }
+}
+
+/// [`pay`], or with `wide` (`game.wide_money`) [`pay_wide`].
+pub fn pay_in(wide: bool, coins: Coins, price: u32) -> Option<Payment> {
+    if wide {
+        pay_wide(coins, u64::from(price))
+    } else {
+        pay(coins, price)
+    }
+}
+
+/// The purse's value in copper as the game shows it: the original's 32-bit total
+/// ([`to_copper`]), or with `wide` (`game.wide_money`) the exact one.
+pub fn purse_value(wide: bool, coins: Coins) -> u64 {
+    if wide {
+        to_copper_wide(coins)
+    } else {
+        u64::from(to_copper(coins))
+    }
+}
+
 /// `copper` added to `coins` as the fewest coins (`game.wide_money`'s withdrawal): runic,
 /// platinum, gold, silver and copper. `None`, and nothing added, when a coin count would pass
 /// its 32 bits.

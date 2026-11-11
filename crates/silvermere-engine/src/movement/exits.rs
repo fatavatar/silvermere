@@ -500,7 +500,7 @@ fn toll(world: &mut World, c: &GateCtx) -> Gate {
     else {
         return Gate::Refused;
     };
-    if let Some(payment) = economy::pay(coins, price) {
+    if let Some(payment) = economy::pay_in(world.config.wide_money, coins, price) {
         if let Some(p) = world.session_mut(c.id).and_then(|s| s.character.as_mut()) {
             p.coins = payment.left;
         }

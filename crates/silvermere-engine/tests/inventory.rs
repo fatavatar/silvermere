@@ -1285,6 +1285,26 @@ fn wealth() {
     );
 }
 
+// A purse worth more than 32 bits of copper: the original's total wraps (15,309 runic shows
+// 2,424,098,112), `game.wide_money` shows it whole, on WEALTH and INVENTORY alike.
+#[test]
+fn wealth_past_32_bits_follows_wide_money() {
+    for (wide, shown) in [(false, "2424098112"), (true, "15309000000")] {
+        let mut w = world();
+        w.config.wide_money = wide;
+        let id = player(&mut w, "Aldric");
+        edit(&mut w, id, |c| c.coins.runic = 15_309);
+        let want = format!("Wealth: {shown} copper farthings");
+        assert_eq!(
+            cmd(&mut w, id, "wealth"),
+            ["You have 15309 runic coins.", want.as_str()],
+            "wide_money {wide}"
+        );
+        let inv = cmd(&mut w, id, "inventory");
+        assert!(inv.contains(&want), "wide_money {wide}: {inv:?}");
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Light.
 

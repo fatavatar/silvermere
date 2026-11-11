@@ -193,7 +193,7 @@ fn run_clause(
     match *clause {
         Clause::Price { copper, msg } => {
             let price = u32::try_from(copper).unwrap_or(0);
-            match economy::pay(plr.coins, price) {
+            match economy::pay_in(world.config.wide_money, plr.coins, price) {
                 Some(p) => {
                     if let Some(plr) = player_mut(world, id) {
                         plr.coins = p.left;

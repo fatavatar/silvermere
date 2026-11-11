@@ -832,7 +832,7 @@ pattern = "inv_no_keys"
 [messages.inv_wealth]
 text = "{@ANSI_GREEN}Wealth: {@ANSI_FGCYAN}{copper} {name}\r"
 pattern = "inv_wealth"
-args = { copper = "u32" }
+args = { copper = "u64" }
 example = { copper = "223", name = "copper farthings" }
 note = "The total in copper and the copper coin name; INVENTORY and WEALTH print the same line."
 

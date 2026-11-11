@@ -146,8 +146,10 @@ money as unsigned 32-bit copper: a bankbook holds at most 4,294,967,295 copper (
 runic coins), DEPOSIT and WITHDRAW read at most nine digits (999,999,999 copper), and a purse
 worth more than 32 bits of copper is valued by the original's wrapping rules, so it may be
 refused a deposit it can pay. With it on, balances and purse values are counted in 64 bits (up
-to 9,223,372,036,854,775,807 copper, what the database's column holds), the amounts take up to
-eighteen digits, and a withdrawal comes as the fewest coins rather than as copper. Turning it off
+to 9,223,372,036,854,775,807 copper, what the database's column holds): the `Wealth:` line of
+INVENTORY and WEALTH shows the whole purse, and shops, training, tolls, the hospital, SET GENDER
+and script prices take what a purse is really worth. The bank amounts take up to eighteen digits,
+and a withdrawal comes as the fewest coins rather than as copper. Turning it off
 again caps nothing already in a bankbook: a balance past 32 bits stays and can be withdrawn.
 
 ## Kept exact
