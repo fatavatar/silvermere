@@ -1,11 +1,19 @@
 //! The `[MAJORMUD]:` menu a player sees outside the realm, and the two `.MSG` screens
 //! around it, the realm entry banner (`USRFOLED`) and the logon greeting (`USRLOGIN`).
 //!
-//! The texts are entries of `messages/prompt.toml`. Every renderer returns the bytes the
-//! player receives (`render::finish`: `\r\n` line ends, no wrap); the menu ends with the
-//! `[MAJORMUD]: ` prompt and no newline.
+//! `MENUTEXT`, `MENUPMPT`, `USRFOLED` and `USRLOGIN` come from the installed package text
+//! ([`crate::package::installed`]), which holds the realm's own (the database's
+//! `game_texts`, which the import and overlays write). Until it is installed they are the
+//! stock entries of `messages/prompt.toml`, which match the stock files byte for byte. The
+//! menu's other lines (the race change, `[SYSOP]`, the tournament notice) are the DLL's and
+//! always come from `prompt.toml`.
+//!
+//! Every renderer returns the bytes the player receives (`render::finish`: `\r\n` line
+//! ends, no wrap); the menu ends with the `[MAJORMUD]: ` prompt and no newline.
 
+use crate::catalogue::{Catalogue, TemplatePiece};
 use crate::cp437;
+use crate::package::{self, PackageText};
 use crate::prompt::prompt_text;
 use crate::render::finish;
 
@@ -43,9 +51,21 @@ pub struct MenuInput<'a> {
 /// The menu as the player receives it. Lines that add-ons could add to the menu are not
 /// carried.
 pub fn render_menu(input: MenuInput) -> Vec<u8> {
+    render_menu_from(package::installed(), input)
+}
+
+/// [`render_menu`] with `MENUTEXT` and `MENUPMPT` from `text` (the stock `prompt.toml`
+/// entries without it).
+pub fn render_menu_from(text: Option<&PackageText>, input: MenuInput) -> Vec<u8> {
     let mut prf = String::new();
     // MENUTEXT with the full version.
-    prf.push_str(&prompt_text("menu_text").replace("{version}", input.version));
+    prf.push_str(&msg_text(
+        text,
+        PackageText::wcctext,
+        "menutext",
+        "menu_text",
+        input.version,
+    ));
     // the race change offer
     if let Some(change) = input.race_change {
         prf.push_str(prompt_text(if change.class_too {
@@ -69,19 +89,69 @@ pub fn render_menu(input: MenuInput) -> Vec<u8> {
     if input.tournament {
         prf.push_str(prompt_text("tournament"));
     }
-    prf.push_str(prompt_text("menu_prompt"));
+    prf.push_str(&msg_text(
+        text,
+        PackageText::wcctext,
+        "menupmpt",
+        "menu_prompt",
+        "",
+    ));
     finish(&cp437::encode(&prf), None)
 }
 
-/// The realm entry banner, `USRFOLED`: clear screen, `MajorMUD - ROL`
-/// and the `=-=` rule.
+/// The realm entry banner, `USRFOLED` (stock: clear screen, `MajorMUD - ROL` and the
+/// `=-=` rule).
 pub fn render_entry_banner() -> Vec<u8> {
-    finish(&cp437::encode(prompt_text("entry_banner")), None)
+    render_entry_banner_from(package::installed())
 }
 
-/// The logon greeting, `USRLOGIN` with the short version:
-/// `Fantasy awaits you in MajorMUD v1.11p-WG!`.
+/// [`render_entry_banner`] from `text` (the stock `prompt.toml` entry without it).
+pub fn render_entry_banner_from(text: Option<&PackageText>) -> Vec<u8> {
+    let banner = msg_text(text, PackageText::wccmmud, "usrfoled", "entry_banner", "");
+    finish(&cp437::encode(&banner), None)
+}
+
+/// The logon greeting, `USRLOGIN` with the short version (stock:
+/// `Fantasy awaits you in MajorMUD v1.11p-WG!`).
 pub fn render_login_greeting(version: &str) -> Vec<u8> {
-    let text = prompt_text("login_greeting").replace("{version}", version);
-    finish(&cp437::encode(&text), None)
+    render_login_greeting_from(package::installed(), version)
+}
+
+/// [`render_login_greeting`] from `text` (the stock `prompt.toml` entry without it).
+pub fn render_login_greeting_from(text: Option<&PackageText>, version: &str) -> Vec<u8> {
+    let greeting = msg_text(
+        text,
+        PackageText::wccmmud,
+        "usrlogin",
+        "login_greeting",
+        version,
+    );
+    finish(&cp437::encode(&greeting), None)
+}
+
+/// The text block `key` of one of `text`'s message files with its one argument (the
+/// version) filled in; the `prompt.toml` entry `stock` when there is no package text.
+fn msg_text(
+    text: Option<&PackageText>,
+    file: fn(&PackageText) -> &Catalogue,
+    key: &str,
+    stock: &str,
+    version: &str,
+) -> String {
+    let Some(entry) = text.and_then(|t| file(t).messages.get(key)) else {
+        return prompt_text(stock).replace("{version}", version);
+    };
+    let Ok(pieces) = entry.pieces(key) else {
+        return prompt_text(stock).replace("{version}", version);
+    };
+    let mut out = String::new();
+    for piece in pieces {
+        match piece {
+            TemplatePiece::Text(t) => out.push_str(&t),
+            TemplatePiece::Arg(_) => out.push_str(version),
+            // the message files' text blocks hold no macros
+            TemplatePiece::Ansi(_) | TemplatePiece::Colour(_) => {}
+        }
+    }
+    out
 }

@@ -159,7 +159,9 @@ Three kinds are text the realm's files held rather than records
 - **Game texts** (`[[game_text_change]]` only, keyed by `key`): the twelve text blocks of
   `WCCMMUD.MSG` and `WCCTEXT.MSG` the server shows, `USRLOGIN` (the line at login),
   `USRFOLED` (the banner on entering) and the rest. They always exist, so an overlay changes
-  them and never creates one; another key is an error naming the twelve.
+  them and never creates one; another key is an error naming the twelve. The server reads
+  them when it starts, so a change shows after a restart. Among them are the main menu
+  (`MENUTEXT`) and its prompt (`MENUPMPT`).
 
 Their `text` (and a topic's `words`) take the same `{ansi:..}` markup as a text block's.
 

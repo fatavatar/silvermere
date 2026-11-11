@@ -638,3 +638,79 @@ fn doc_accounts_for_every_msg_option() {
     names.dedup();
     assert_eq!(before, names.len(), "an option appears twice");
 }
+
+// ---- the menu screens from the package text -----------------------------------------
+
+// The four screens render from the installed package text, and the stock package's are the
+// captured bytes.
+#[test]
+fn menu_screens_from_the_stock_package_equal_the_capture() {
+    use silvermere_text::menu::{
+        MenuInput, render_entry_banner_from, render_login_greeting_from, render_menu_from,
+    };
+    let text = Some(crate::package());
+    assert_eq!(
+        render_login_greeting_from(text, SHORTVER),
+        CAPTURED_GREETING
+    );
+    assert_eq!(render_entry_banner_from(text), CAPTURED_BANNER);
+    let menu = render_menu_from(
+        text,
+        MenuInput {
+            version: MUDVER,
+            race_change: None,
+            sysop: false,
+            tournament: false,
+        },
+    );
+    assert_eq!(menu, CAPTURED_MENU);
+    // without the package text, the stock prompt.toml entries give the same bytes
+    assert_eq!(
+        render_login_greeting_from(None, SHORTVER),
+        CAPTURED_GREETING
+    );
+    assert_eq!(render_entry_banner_from(None), CAPTURED_BANNER);
+}
+
+// A realm's own text blocks (the database's game_texts) replace the stock ones on screen.
+#[test]
+fn menu_screens_show_the_realms_text() {
+    use silvermere_text::menu::{
+        MenuInput, render_entry_banner_from, render_login_greeting_from, render_menu_from,
+    };
+    use silvermere_text::package::{PackageText, RealmText};
+    let mut realm = RealmText::default();
+    for (key, text) in [
+        (
+            "USRLOGIN",
+            "\x1b[0;30mFantasy awaits you in majorMUD v%s!\n",
+        ),
+        ("USRFOLED", "\x1b[0m\x1b[2J\x1b[1;30m=-=-=\n\n"),
+        ("MENUTEXT", "{Our Realm} v%s\n"),
+        ("MENUPMPT", "[OURS]: "),
+    ] {
+        realm.texts.insert(key.to_string(), text.to_string());
+    }
+    let text = PackageText::load_with(&crate::stock::assets_dir(), &realm).expect("loads");
+    assert_eq!(
+        render_login_greeting_from(Some(&text), SHORTVER),
+        b"\x1b[0;30mFantasy awaits you in majorMUD v1.11p-WG!\r\n"
+    );
+    assert_eq!(
+        render_entry_banner_from(Some(&text)),
+        b"\x1b[0m\x1b[2J\x1b[1;30m=-=-=\r\n\r\n"
+    );
+    let menu = render_menu_from(
+        Some(&text),
+        MenuInput {
+            version: "1.11p",
+            race_change: None,
+            sysop: true,
+            tournament: false,
+        },
+    );
+    let mut want = b"{Our Realm} v1.11p\r\n".to_vec();
+    want.extend_from_slice(&finish(&cp437::encode(prompt_text("sysop_item")), None));
+    want.extend_from_slice(b"[OURS]: ");
+    assert_eq!(menu, want);
+}
