@@ -10,7 +10,10 @@
 //!   third line ("You feel perceptive!") and ends it with its first ("The effects of alertness
 //!   wear off!"): one row, its condition read from the spell's abilities as the engine applies
 //!   them (see [`effects`]); the target of a monster's spell reads that line right after the
-//!   spell's own;
+//!   spell's own. Every spell that prints the line has a row of its own, even beside another of
+//!   the same name (the monsters' `ethereal chains` holds and confuses, the players' only
+//!   holds): `Flags` is what the line's spells agree on, and `Source` names the spell and what
+//!   it gives by itself, so a client that knows who is casting can tell them apart;
 //! - a spell's own message and its *starting message* (`StartMsg`) are the caster's lines when a
 //!   player casts it, and their second lines what a monster's target reads: one row each, the
 //!   game's `%s` and `%d` written as Majordomo's `{target}`, `{source}` and `{dmg}`.
@@ -98,21 +101,27 @@ pub fn message_triggers(content: &Content) -> Vec<Row> {
                     end: String,
                     flags: i32| {
         let name = spell.name.trim().to_owned();
-        if message.is_empty()
-            || name.is_empty()
-            || !seen.insert((name.to_lowercase(), message.clone()))
-        {
+        // a condition's line once for each spell that prints it, a cast's or a hit's once a
+        // name: the conditions are each spell's own, the rest the same whichever it was
+        let once = if kind == EFFECT {
+            format!("#{}", spell.number.0)
+        } else {
+            name.to_lowercase()
+        };
+        if message.is_empty() || name.is_empty() || !seen.insert((once, message.clone())) {
             return;
         }
+        let source = if kind == EFFECT {
+            effect_source(spell.number.0, flags)
+        } else {
+            format!("Spell #{}", spell.number.0)
+        };
         let mut row = Row::new();
         row.insert("Name".into(), Value::Text(name));
         row.insert("Message".into(), Value::Text(message));
         row.insert("EndMessage".into(), Value::Text(end));
         row.insert("Response".into(), Value::Text(String::new()));
-        row.insert(
-            "Source".into(),
-            Value::Text(format!("Spell #{}", spell.number.0)),
-        );
+        row.insert("Source".into(), Value::Text(source));
         row.insert("Flags".into(), Value::Long(flags));
         row.insert("Action".into(), Value::Long(0));
         row.insert("Kind".into(), Value::Text(kind.to_owned()));
@@ -133,7 +142,7 @@ pub fn message_triggers(content: &Content) -> Vec<Row> {
             push(
                 &mut rows,
                 spell,
-                "effect",
+                EFFECT,
                 text(n, 2),
                 text(n, 0),
                 effects(&spell.abilities, spell.minval, spell.maxval, spell.duration),
@@ -201,14 +210,29 @@ pub fn message_triggers(content: &Content) -> Vec<Row> {
     rows
 }
 
+/// The `Kind` of a condition's row.
+const EFFECT: &str = "effect";
+
+/// A condition row's `Source`: the spell, and the conditions it gives by itself where they are
+/// any (`Flags` is the line's, see [`agree_on_shared_lines`]). Majordomo reads it back
+/// (`realmMessageTriggers`).
+fn effect_source(spell: i16, flags: i32) -> String {
+    if flags == 0 {
+        format!("Spell #{spell}")
+    } else {
+        format!("Spell #{spell} (flags {flags})")
+    }
+}
+
 /// A condition's line is matched by its words alone, whichever spell printed it: when several
 /// spells begin with the same line, its rows take the conditions most of them give ("You feel
 /// fast!" is speed's and the haste songs', not a monster's blinding mirrored shield's; "You are
 /// stunned!" holds, though a few of its spells only confuse). When no one set of conditions is
-/// the most given, the rows keep what those sets share.
+/// the most given, the rows keep what those sets share. Each row's `Source` keeps its spell's
+/// own, for a client that can tell which spell it was.
 fn agree_on_shared_lines(rows: &mut [Row]) {
     let effect_line = |row: &Row| match (row.get("Kind"), row.get("Message")) {
-        (Some(Value::Text(kind)), Some(Value::Text(m))) if kind == "effect" => Some(m.clone()),
+        (Some(Value::Text(kind)), Some(Value::Text(m))) if kind == EFFECT => Some(m.clone()),
         _ => None,
     };
     let flags = |row: &Row| match row.get("Flags") {
@@ -514,6 +538,62 @@ mod tests {
         assert!(
             rows.iter()
                 .all(|r| r["Flags"] == Value::Long(effect::CONFUSED))
+        );
+    }
+
+    // the realm's two ethereal chains (2026-11-12): the monsters' #309 holds and confuses, the
+    // players' #1620 (which Quest Knights cast too) only holds, and both print message 640
+    #[test]
+    fn spells_of_one_name_sharing_a_line_each_say_what_they_give() {
+        use silvermere_import::overlay::build::{blank_message, blank_monster, blank_spell};
+        use silvermere_types::enums::Ability as A;
+        let mut message = blank_message(640);
+        message.msgs[0] = "The silvery manacles restraining you shimmer and fade.".into();
+        message.msgs[2] = "You are restrained by silvery manacles!".into();
+        let chains = |number: i16, abilities: &[(Ability, i16)]| {
+            let mut spell = blank_spell(number);
+            spell.name = "ethereal chains".into();
+            (spell.minval, spell.maxval, spell.duration) = (1, 1, 6);
+            spell.abilities[0] = (A::DescMsg, 640);
+            for (slot, ability) in abilities.iter().enumerate() {
+                spell.abilities[slot + 1] = *ability;
+            }
+            spell
+        };
+        let mut knight = blank_monster(1179);
+        knight.attacks[0].kind = MonsterAttackType::Spell;
+        knight.attacks[0].accuracy = 1620;
+        let content = Content {
+            rooms: vec![],
+            monsters: vec![knight],
+            items: vec![],
+            spells: vec![
+                chains(309, &[(A::HoldPerson, 100), (A::Confusion, 100)]),
+                chains(1620, &[(A::HoldPerson, 100)]),
+            ],
+            shops: vec![],
+            classes: vec![],
+            races: vec![],
+            messages: vec![message],
+            text_blocks: vec![],
+        };
+        let effects: Vec<Row> = message_triggers(&content)
+            .into_iter()
+            .filter(|r| r["Kind"] == Value::Text(EFFECT.into()))
+            .collect();
+        let sources: Vec<&Value> = effects.iter().map(|r| &r["Source"]).collect();
+        assert_eq!(
+            sources,
+            [
+                &Value::Text("Spell #309 (flags 48)".into()),
+                &Value::Text("Spell #1620 (flags 16)".into())
+            ]
+        );
+        // one each, so the line holds and no more: what the two share
+        assert!(
+            effects
+                .iter()
+                .all(|r| r["Flags"] == Value::Long(effect::HELD))
         );
     }
 
